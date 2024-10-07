@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "/Users/mert/github/Nexar/Nexar /samples/Nexar.samples/Nexar.samples.csproj": {}
+    "/Users/mert/github/Nexar/samples/Nexar.samples/Nexar.samples.csproj": {}
   },
   "projects": {
-    "/Users/mert/github/Nexar/Nexar /samples/Nexar.samples/Nexar.samples.csproj": {
+    "/Users/mert/github/Nexar/samples/Nexar.samples/Nexar.samples.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/Users/mert/github/Nexar/Nexar /samples/Nexar.samples/Nexar.samples.csproj",
+        "projectUniqueName": "/Users/mert/github/Nexar/samples/Nexar.samples/Nexar.samples.csproj",
         "projectName": "Nexar.samples",
-        "projectPath": "/Users/mert/github/Nexar/Nexar /samples/Nexar.samples/Nexar.samples.csproj",
+        "projectPath": "/Users/mert/github/Nexar/samples/Nexar.samples/Nexar.samples.csproj",
         "packagesPath": "/Users/mert/.nuget/packages/",
-        "outputPath": "/Users/mert/github/Nexar/Nexar /samples/Nexar.samples/obj/",
+        "outputPath": "/Users/mert/github/Nexar/samples/Nexar.samples/obj/",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "/Users/mert/.nuget/NuGet/NuGet.Config"

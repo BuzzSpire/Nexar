@@ -7,4 +7,10 @@
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
+    <ItemGroup>
+      <Reference Include="Nexar">
+        <HintPath>..\..\Nexar \bin\Debug\net8.0\Nexar.dll</HintPath>
+      </Reference>
+    </ItemGroup>
+
 </Project>
