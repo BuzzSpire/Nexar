@@ -75,4 +75,3 @@ If you encounter any issues or have questions about using Nexar, please open an 
 ---
 
 Enhance your C# applications with the power of Nexar and streamline your API interactions today!
-```
