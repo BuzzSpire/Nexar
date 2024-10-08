@@ -1,8 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using System;
 using System.Collections.Generic;
-using Nexar;
-
 class Program
 {
     static async Task Main(string[] args)
@@ -16,7 +14,7 @@ class Program
 
         try
         {
-            var response = await nexar.GetAsync("https://api.example.com", headers);
+            var response = await nexar.GetAsync("https://freetestapi.com/api/v1/destinations/1", headers);
             Console.WriteLine(response);
         }
         catch (Exception ex)

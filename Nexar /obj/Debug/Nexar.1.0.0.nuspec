@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>Nexar</id>
+    <version>1.0.0</version>
+    <title>Nexar - Simplified HTTP Requests for C#</title>
+    <authors>Nexar</authors>
+    <requireLicenseAcceptance>true</requireLicenseAcceptance>
+    <licenseUrl>https://github.com/BuzzSpire/Nexar/blob/main/LICENSE</licenseUrl>
+    <icon>ozel.png</icon>
+    <projectUrl>https://github.com/BuzzSpire/Nexar</projectUrl>
+    <description>Nexar is a powerful and user-friendly C# class designed for seamless communication with web APIs. With Nexar, sending and receiving HTTP requests has never been easier. Whether you need to perform simple GET requests or more complex POST operations, Nexar provides a clean and efficient interface to interact with web services.</description>
+    <releaseNotes>Alfa</releaseNotes>
+    <copyright>MIT</copyright>
+    <tags>C#, HttpClient, HTTP, Requests, REST, API, GET, POST, PUT, DELETE, PATCH, Head, Async, Asynchronous, .NET, Nexar, Web, API, Client, Library</tags>
+    <repository type="git" url="https://github.com/BuzzSpire/Nexar" commit="b829d5a58ca8049bb3983a484787a1bc0e434f1a" />
+    <dependencies>
+      <group targetFramework="net8.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="/Users/mert/github/Nexar/Nexar /bin/Debug/net8.0/Nexar.dll" target="lib/net8.0/Nexar.dll" />
+    <file src="/Users/mert/github/Nexar/Nexar /ozel.png" target="ozel.png" />
+  </files>
+</package>
