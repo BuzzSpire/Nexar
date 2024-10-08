@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>Nexar</id>
+    <version>1.0.0</version>
+    <authors>Nexar</authors>
+    <description>Package Description</description>
+    <repository type="git" commit="b829d5a58ca8049bb3983a484787a1bc0e434f1a" />
+    <dependencies>
+      <group targetFramework="net8.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="/Users/mert/github/Nexar/Nexar /bin/Release/net8.0/Nexar.dll" target="lib/net8.0/Nexar.dll" />
+  </files>
+</package>

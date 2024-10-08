@@ -8,9 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Reference Include="Nexar">
-        <HintPath>..\..\Nexar \bin\Debug\net8.0\Nexar.dll</HintPath>
-      </Reference>
+      <PackageReference Include="BuzzSpire.Nexar" Version="1.0.0" />
     </ItemGroup>
 
 </Project>

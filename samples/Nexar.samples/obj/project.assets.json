@@ -1,11 +1,38 @@
 {
   "version": 3,
   "targets": {
-    "net8.0": {}
+    "net8.0": {
+      "BuzzSpire.Nexar/1.0.0": {
+        "type": "package",
+        "compile": {
+          "lib/net8.0/Nexar.dll": {}
+        },
+        "runtime": {
+          "lib/net8.0/Nexar.dll": {}
+        }
+      }
+    }
   },
-  "libraries": {},
+  "libraries": {
+    "BuzzSpire.Nexar/1.0.0": {
+      "sha512": "+Y2YKN1VEC9moqYLNpIM1nweOf47wIBNz+4aLB1oJuXFr2KIxv+z9L/Bfg6+y5SXeYge2z8MqQJyuqzBS+CUdg==",
+      "type": "package",
+      "path": "buzzspire.nexar/1.0.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "README.md",
+        "buzzspire.nexar.1.0.0.nupkg.sha512",
+        "buzzspire.nexar.nuspec",
+        "lib/net8.0/Nexar.dll",
+        "ozel.png"
+      ]
+    }
+  },
   "projectFileDependencyGroups": {
-    "net8.0": []
+    "net8.0": [
+      "BuzzSpire.Nexar >= 1.0.0"
+    ]
   },
   "packageFolders": {
     "/Users/mert/.nuget/packages/": {}
@@ -43,6 +70,12 @@
     "frameworks": {
       "net8.0": {
         "targetAlias": "net8.0",
+        "dependencies": {
+          "BuzzSpire.Nexar": {
+            "target": "Package",
+            "version": "[1.0.0, )"
+          }
+        },
         "imports": [
           "net461",
           "net462",
