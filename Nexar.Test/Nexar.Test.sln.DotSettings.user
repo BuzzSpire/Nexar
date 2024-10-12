@@ -1,11 +1,11 @@
 ﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
 	<s:Boolean x:Key="/Default/AddReferences/RecentPaths/=_002FUsers_002Fmert_002Fgithub_002FNexar_002FNexar_0020_002Fbin_002FDebug_002Fnet8_002E0_002FNexar_002Edll/@EntryIndexedValue">True</s:Boolean>
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=38738679_002D1c03_002D40a1_002Db089_002Ddd8d221456aa/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="GetAsync_ReturnsSuccessfulResponse" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=38738679_002D1c03_002D40a1_002Db089_002Ddd8d221456aa/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="GetAsync_ReturnsSuccessfulResponse" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
   &lt;TestAncestor&gt;
     &lt;TestId&gt;xUnit::31A13890-A264-4A09-9AD3-ACE82D69E396::net8.0::NexarTests&lt;/TestId&gt;
   &lt;/TestAncestor&gt;
 &lt;/SessionState&gt;</s:String>
-	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=6a015090_002Dd404_002D4a18_002D9a5e_002De74767d304b5/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" Name="NexarTests" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=6a015090_002Dd404_002D4a18_002D9a5e_002De74767d304b5/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="NexarTests" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
   &lt;TestAncestor&gt;
     &lt;TestId&gt;xUnit::31A13890-A264-4A09-9AD3-ACE82D69E396::net8.0::NexarTests&lt;/TestId&gt;
   &lt;/TestAncestor&gt;
