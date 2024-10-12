@@ -1,4 +1,3 @@
-![Nexar](https://socialify.git.ci/BuzzSpire/Nexar/image?description=1&descriptionEditable=Nexar%20is%20a%20C%23%20class%20used%20for%20sending%20and%20receiving%20HTTP%20requests.&font=Jost&forks=1&issues=1&language=1&name=1&owner=1&pattern=Circuit%20Board&pulls=1&stargazers=1&theme=Auto)
 # Nexar
 Nexar is a powerful and user-friendly C# class designed for seamless communication with web APIs. With Nexar, sending and receiving HTTP requests has never been easier. Whether you need to perform simple GET requests or more complex POST operations, Nexar provides a clean and efficient interface to interact with web services.
 
@@ -36,6 +35,44 @@ finally
     nexar.Dispose();
 }
 ```
+
+
+Here’s a quick example to demonstrate how to use the Nexar class to send a POST request:
+
+```csharp
+var nexar = new Nexar();
+
+var headers = new Dictionary<string, string>
+{
+    { "Accept", "application/json" },
+};
+
+try
+{
+     var body = new
+        {
+            id = 21,
+            title = "test product",
+            price = 13.5,
+            description = "lorem ipsum set",
+            image = "https://i.pravatar.cc",
+            category = "electronic"
+        };
+
+        var response =
+            await _nexar.PostAsync("https://api.example.com/products", headers, body);
+          Console.WriteLine(response);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"An error occurred: {ex.Message}");
+}
+finally
+{
+    nexar.Dispose();
+}
+```
+
 
 In this example, an instance of the `Nexar` class is created, headers are defined, and a GET request is sent to `https://api.example.com`. The response is printed to the console, while errors are gracefully handled.
 
