@@ -21,7 +21,7 @@ public interface INexar
     /// <param name="headers">The headers to be added to the request.</param>
     /// <param name="body">The body of the request.</param>
     /// <returns>The HTTP response message as a string.</returns>
-    Task<string> PostAsync(string url, Dictionary<string, string> headers, string body);
+    Task<string> PostAsync<T>(string url, Dictionary<string, string> headers, T body);
 
     /// <summary>
     /// Sends a PUT request to the specified Uri as an asynchronous operation.
