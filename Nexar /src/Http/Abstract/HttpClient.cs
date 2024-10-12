@@ -30,7 +30,7 @@ public interface INexar
     /// <param name="headers">The headers to be added to the request.</param>
     /// <param name="body">The body of the request.</param>
     /// <returns>The HTTP response message as a string.</returns>
-    Task<string> PutAsync(string url, Dictionary<string, string> headers, string body);
+    Task<string> PutAsync<T>(string url, Dictionary<string, string> headers, T body);
 
     /// <summary>
     /// Sends a DELETE request to the specified Uri as an asynchronous operation.
@@ -47,7 +47,7 @@ public interface INexar
     /// <param name="headers">The headers to be added to the request.</param>
     /// <param name="body">The body of the request.</param>
     /// <returns>The HTTP response message as a string.</returns>
-    Task<string> PatchAsync(string url, Dictionary<string, string> headers, string body);
+    Task<string> PatchAsync<T>(string url, Dictionary<string, string> headers, T body);
 
     /// <summary>
     /// Sends a HEAD request to the specified Uri as an asynchronous operation.
