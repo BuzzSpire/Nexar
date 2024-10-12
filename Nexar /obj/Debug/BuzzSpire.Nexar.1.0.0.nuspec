@@ -14,7 +14,7 @@
     <releaseNotes>Alfa</releaseNotes>
     <copyright>MIT</copyright>
     <tags>C#, HttpClient, HTTP, Requests, REST, API, GET, POST, PUT, DELETE, PATCH, Head, Async, Asynchronous, .NET, Nexar, Web, API, Client, Library</tags>
-    <repository type="git" url="https://github.com/BuzzSpire/Nexar" commit="b829d5a58ca8049bb3983a484787a1bc0e434f1a" />
+    <repository type="git" url="https://github.com/BuzzSpire/Nexar" commit="68916bd81183d69c1bb5b35fb1fe1b4e6487c52f" />
     <dependencies>
       <group targetFramework="net8.0" />
     </dependencies>

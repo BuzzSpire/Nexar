@@ -1,12 +1,17 @@
 using Moq;
 using System.Net;
 using Moq.Protected;
+using Newtonsoft.Json;
+using Xunit.Abstractions;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 /// <summary>
 /// This class contains unit tests for the Nexar class.
 /// </summary>
 public class NexarTests
 {
+    private readonly ITestOutputHelper _testOutputHelper;
+
     /// <summary>
     /// Mock object for HttpMessageHandler to simulate HTTP requests.
     /// </summary>
@@ -26,11 +31,21 @@ public class NexarTests
     /// Constructor for the NexarTests class.
     /// Initializes the mock HttpMessageHandler, HttpClient, and Nexar objects.
     /// </summary>
-    public NexarTests()
+    public NexarTests(ITestOutputHelper testOutputHelper)
     {
+        _testOutputHelper = testOutputHelper;
         _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
         _client = new HttpClient(_mockHttpMessageHandler.Object);
         _nexar = new Nexar.Nexar();
+        
+        // Setup the mock HttpMessageHandler to return a successful HTTP response.
+        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("Successful response")
+        };
+        _mockHttpMessageHandler.Protected().Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>()).ReturnsAsync(httpResponse);
+
     }
 
     /// <summary>
@@ -40,21 +55,6 @@ public class NexarTests
     [Fact]
     public async Task GetAsync_ReturnsSuccessfulResponse()
     {
-        // Setup the mock HttpMessageHandler to return a successful HTTP response.
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent("Successful response")
-        };
-
-        _mockHttpMessageHandler
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>()
-            )
-            .ReturnsAsync(httpResponse);
-
         // Call the GetAsync method and verify the response.
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
         var result = await _nexar.GetAsync("https://fakestoreapi.com/products/1", headers);
@@ -69,20 +69,30 @@ public class NexarTests
     [Fact]
     public async Task GetAsync_ThrowsExceptionForUnsuccessfulResponse()
     {
-        // Setup the mock HttpMessageHandler to return a bad request HTTP response.
-        var httpResponse = new HttpResponseMessage(HttpStatusCode.BadRequest);
-
-        _mockHttpMessageHandler
-            .Protected()
-            .Setup<Task<HttpResponseMessage>>(
-                "SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>()
-            )
-            .ReturnsAsync(httpResponse);
-
         // Call the GetAsync method and verify that it throws an exception.
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
         await Assert.ThrowsAsync<HttpRequestException>(() => _nexar.GetAsync("https://api.example.com", headers));
     }
+
+    [Fact]
+    public async Task PostAsync_ReturnsSuccessfulResponse()
+    {
+        var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
+      
+        var body = new
+        {
+            id = 21,
+            title = "test product",
+            price = 13.5,
+            description = "lorem ipsum set",
+            image = "https://i.pravatar.cc",
+            category = "electronic"
+        };
+
+        var result =
+            await _nexar.PostAsync("https://fakestoreapi.com/products", headers, body);
+       
+        Assert.Equal(JsonSerializer.Serialize(body), result);
+    }
+
 }

@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using Nexar.Http.Abstract;
 
 
@@ -21,17 +23,19 @@ namespace Nexar
             return await response.Content.ReadAsStringAsync();
         }
 
-        public async Task<string> PostAsync(string url, Dictionary<string, string> headers, string body)
+        public async Task<string> PostAsync<T>(string url, Dictionary<string, string> headers, T body)
         {
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                Content = new StringContent(body)
+                Content = new StringContent(JsonSerializer.Serialize(body))
             };
 
             foreach (var header in headers)
             {
                 request.Headers.Add(header.Key, header.Value);
             }
+            
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
             var response = await _client.SendAsync(request);
             response.EnsureSuccessStatusCode();
