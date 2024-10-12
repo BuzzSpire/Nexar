@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Nexar.Test")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+68916bd81183d69c1bb5b35fb1fe1b4e6487c52f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ca06a279ed3b76362a0f109bc05ab3f62615ffc1")]
 [assembly: System.Reflection.AssemblyProductAttribute("Nexar.Test")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Nexar.Test")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
