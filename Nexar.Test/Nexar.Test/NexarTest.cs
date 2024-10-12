@@ -57,9 +57,9 @@ public class NexarTests
 
         // Call the GetAsync method and verify the response.
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-        var result = await _nexar.GetAsync("https://freetestapi.com/api/v1/authors/1", headers);
+        var result = await _nexar.GetAsync("https://fakestoreapi.com/products/1", headers);
 
-        Assert.Equal("{\"id\":1,\"name\":\"William Shakespeare\",\"birth_year\":1564,\"death_year\":1616,\"nationality\":\"English\",\"genre\":[\"Drama\",\"Poetry\"],\"notable_works\":[\"Hamlet\",\"Romeo and Juliet\",\"Macbeth\",\"Othello\",\"King Lear\"],\"award\":\"None\",\"biography\":\"William Shakespeare was an English playwright, poet, and actor, widely regarded as the greatest writer in the English language and the world's greatest dramatist.\",\"image\":\"https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/William_Shakespeare_by_John_Taylor.jpg/800px-William_Shakespeare_by_John_Taylor.jpg\"}", result);
+        Assert.Equal("{\"id\":1,\"title\":\"Fjallraven - Foldsack No. 1 Backpack, Fits 15 Laptops\",\"price\":109.95,\"description\":\"Your perfect pack for everyday use and walks in the forest. Stash your laptop (up to 15 inches) in the padded sleeve, your everyday\",\"category\":\"men's clothing\",\"image\":\"https://fakestoreapi.com/img/81fPKd-2AYL._AC_SL1500_.jpg\",\"rating\":{\"rate\":3.9,\"count\":120}}", result);
     }
 
     /// <summary>
