@@ -1,7 +1,7 @@
 using Moq;
-using System.Net;
 using Moq.Protected;
 using Newtonsoft.Json;
+using System.Net;
 using Xunit.Abstractions;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
@@ -37,7 +37,7 @@ public class NexarTests
         _mockHttpMessageHandler = new Mock<HttpMessageHandler>();
         _client = new HttpClient(_mockHttpMessageHandler.Object);
         _nexar = new Nexar.Nexar();
-        
+
         // Setup the mock HttpMessageHandler to return a successful HTTP response.
         var httpResponse = new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -82,7 +82,7 @@ public class NexarTests
     public async Task PostAsync_ReturnsSuccessfulResponse()
     {
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-      
+
         var body = new
         {
             id = 21,
@@ -95,10 +95,10 @@ public class NexarTests
 
         var result =
             await _nexar.PostAsync("https://fakestoreapi.com/products", headers, body);
-       
+
         Assert.Equal(JsonSerializer.Serialize(body), result);
     }
-    
+
     /// <summary>
     ///  Test case for the PutAsync method of the Nexar class.
     ///  This test verifies that the method returns a successful response.
@@ -107,7 +107,7 @@ public class NexarTests
     public async Task PutAsync_ReturnsSuccessfulResponse()
     {
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-      
+
         var body = new
         {
             id = 21,
@@ -120,10 +120,10 @@ public class NexarTests
 
         var result =
             await _nexar.PutAsync("https://fakestoreapi.com/products/21", headers, body);
-      
+
         Assert.Equal(JsonSerializer.Serialize(body), result);
     }
-    
+
     /// <summary>
     ///  Test case for the DeleteAsync method of the Nexar class.
     ///  This test verifies that the method returns a successful response.
@@ -132,14 +132,14 @@ public class NexarTests
     public async Task DeleteAsync_ReturnsSuccessfulResponse()
     {
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-      
+
         var result = _nexar.DeleteAsync("https://fakestoreapi.com/products/6", headers);
-        
+
         var expected = "{\"id\":6,\"title\":\"Solid Gold Petite Micropave \",\"price\":168,\"description\":\"Satisfaction Guaranteed. Return or exchange any order within 30 days.Designed and sold by Hafeez Center in the United States. Satisfaction Guaranteed. Return or exchange any order within 30 days.\",\"category\":\"jewelery\",\"image\":\"https://fakestoreapi.com/img/61sbMiUnoGL._AC_UL640_QL65_ML3_.jpg\",\"rating\":{\"rate\":3.9,\"count\":70}}";
         var actual = await result;
-        Assert.Equal(expected, actual); 
+        Assert.Equal(expected, actual);
     }
-    
+
     /// <summary>
     ///  Test case for the PatchAsync method of the Nexar class.
     ///  This test verifies that the method returns a successful response.
@@ -148,7 +148,7 @@ public class NexarTests
     public async Task PatchAsync_ReturnsSuccessfulResponse()
     {
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-      
+
         var body = new
         {
             id = 21,
@@ -161,8 +161,7 @@ public class NexarTests
 
         var result =
             await _nexar.PatchAsync("https://fakestoreapi.com/products/21", headers, body);
-      
+
         Assert.Equal(JsonSerializer.Serialize(body), result);
     }
-
 }

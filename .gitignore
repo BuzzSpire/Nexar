@@ -1,10 +1,35 @@
-samples/Nexar.samples/.idea/.idea.Nexar.dir/.idea
+# Build outputs
+bin/
+obj/
+artifacts/
+TestResults/
+*.nupkg
+*.snupkg
+*.apphost
+*.dll
+*.exe
+*.pdb
+*.deps.json
+*.runtimeconfig.json
+
+# IDE and user-specific
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.rsuser
+*.code-workspace
+*.DotSettings
+*.DotSettings.user
+*.sln.DotSettings
+*.sln.DotSettings.user
+
+# Logs and caches
+*.log
+*.cache
+
+# OS junk
 .DS_Store
-samples/Nexar.samples/bin/Debug/net8.0
-Nexar /ozel.png
-.idea/.idea.Nexar /.idea
-Nexar /.idea/.idea.Nexar .dir/.idea
-Nexar /bin/Debug
-Nexar /bin/Debug
-Nexar /bin/Debug
-Nexar.Test/Nexar.Test/bin/Debug/net8.0
+Thumbs.db

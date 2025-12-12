@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <Title>Nexar - Simplified HTTP Requests for C#</Title>
+    <Description>Nexar is a powerful and user-friendly C# class designed for seamless communication with web APIs. With Nexar, sending and receiving HTTP requests has never been easier. Whether you need to perform simple GET requests or more complex POST operations, Nexar provides a clean and efficient interface to interact with web services.</Description>
+    <Copyright>MIT</Copyright>
+    <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageIcon>ozel.png</PackageIcon>
+    <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
+    <PackageTags>C#, HttpClient, HTTP, Requests, REST, API, GET, POST, PUT, DELETE, PATCH, Head, Async, Asynchronous, .NET, Nexar, Web, API, Client, Library </PackageTags>
+    <PackageReleaseNotes>Alfa</PackageReleaseNotes>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageId>BuzzSpire.Nexar</PackageId>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="docs\README.md" Pack="true" PackagePath="/" />
+    <None Update="ozel.png">
+      <Pack>True</Pack>
+      <PackagePath></PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>
