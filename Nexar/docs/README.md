@@ -1,114 +1,128 @@
 # Nexar
-Nexar is a powerful and user-friendly C# class designed for seamless communication with web APIs. With Nexar, sending and receiving HTTP requests has never been easier. Whether you need to perform simple GET requests or more complex POST operations, Nexar provides a clean and efficient interface to interact with web services.
+
+Nexar is a powerful and user-friendly C# HTTP client library. It provides a clean and intuitive API for making HTTP requests in .NET applications, making web API communication effortless and enjoyable.
 
 ## Features
 
-- **Simple API**: Easy-to-use methods for all major HTTP verbs (GET, POST, PUT, DELETE, PATCH, HEAD).
-- **Asynchronous Operations**: Built-in support for asynchronous requests, ensuring your applications remain responsive.
-- **Customizable Headers**: Easily manage request headers for enhanced control over your API interactions.
-- **Error Handling**: Robust error handling to manage exceptions and keep your applications running smoothly.
-- **Resource Management**: Automatically handles resource disposal to prevent memory leaks.
-
-## Example Usage
-
-Here’s a quick example to demonstrate how to use the Nexar class to send a GET request:
-
-```csharp
-var nexar = new Nexar();
-
-var headers = new Dictionary<string, string>
-{
-    { "Accept", "application/json" },
-};
-
-try
-{
-    var response = await nexar.GetAsync("https://api.example.com", headers);
-    Console.WriteLine(response);
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"An error occurred: {ex.Message}");
-}
-finally
-{
-    nexar.Dispose();
-}
-```
-
-
-Here’s a quick example to demonstrate how to use the Nexar class to send a POST request:
-
-```csharp
-var nexar = new Nexar();
-
-var headers = new Dictionary<string, string>
-{
-    { "Accept", "application/json" },
-};
-
-try
-{
-     var body = new
-        {
-            id = 21,
-            title = "test product",
-            price = 13.5,
-            description = "lorem ipsum set",
-            image = "https://i.pravatar.cc",
-            category = "electronic"
-        };
-
-        var response =
-            await _nexar.PostAsync("https://api.example.com/products", headers, body);
-          Console.WriteLine(response);
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"An error occurred: {ex.Message}");
-}
-finally
-{
-    nexar.Dispose();
-}
-```
-
-
-In this example, an instance of the `Nexar` class is created, headers are defined, and a GET request is sent to `https://api.example.com`. The response is printed to the console, while errors are gracefully handled.
-
-## Available Methods
-
-Nexar provides the following methods for various HTTP operations:
-
-- **`GetAsync(string url, Dictionary<string, string> headers)`**: Sends a GET request.
-- **`PostAsync(string url, Dictionary<string, string> headers, string body)`**: Sends a POST request with a body.
-- **`PutAsync(string url, Dictionary<string, string> headers, string body)`**: Sends a PUT request with a body.
-- **`DeleteAsync(string url, Dictionary<string, string> headers)`**: Sends a DELETE request.
-- **`PatchAsync(string url, Dictionary<string, string> headers, string body)`**: Sends a PATCH request with a body.
-- **`HeadAsync(string url, Dictionary<string, string> headers)`**: Sends a HEAD request.
-
-Each method takes a URL and a dictionary of headers, while the `PostAsync`, `PutAsync`, and `PatchAsync` methods also accept a request body.
+- **Fluent API**: Chainable methods for building requests with ease
+- **Typed Responses**: Generic response types with automatic JSON deserialization
+- **Configuration**: BaseURL, default headers, timeout, and more
+- **Interceptors**: Request and response interceptors for logging, authentication, etc.
+- **Retry Mechanism**: Automatic retry with exponential backoff
+- **Authentication Helpers**: Built-in support for Bearer tokens, Basic Auth, and API keys
+- **Query String Builder**: Easy-to-use query parameter construction
+- **Asynchronous**: Fully async/await support for responsive applications
+- **Error Handling**: Comprehensive error handling with detailed response information
 
 ## Installation
 
-To add Nexar to your project, you can clone the repository or download the latest release. Ensure you have .NET installed and referenced in your project.
-
 ```bash
-git clone https://github.com/BuzzSpire/Nexar.git
+dotnet add package BuzzSpire.Nexar
 ```
 
-## Contributing
+## Quick Start
 
-Contributions are welcome! If you have suggestions or improvements, please open an issue or submit a pull request.
+### Basic GET Request
+
+```csharp
+// Simple: Just get the raw JSON string
+string response = await Nexar.Get("https://api.example.com/users/1");
+Console.WriteLine(response);
+
+// With typed response
+var response = await Nexar.Get<User>("https://api.example.com/users/1");
+if (response.IsSuccess && response.Data != null)
+{
+    Console.WriteLine($"User: {response.Data.Name}");
+    Console.WriteLine($"Status: {response.Status}");
+}
+```
+
+### POST Request
+
+```csharp
+var newUser = new { Name = "John", Email = "john@example.com" };
+
+// Simple: Returns string
+string response = await Nexar.Post("https://api.example.com/users", newUser);
+
+// Typed: Returns NexarResponse<User>
+var response = await Nexar.Post<User>("https://api.example.com/users", newUser);
+if (response.IsSuccess)
+{
+    Console.WriteLine($"Created: {response.Data.Id}");
+}
+```
+
+### Fluent API
+
+```csharp
+var api = Nexar.Create();
+
+// Get typed response
+var response = await api.Request()
+    .Url("https://api.example.com/users")
+    .WithHeader("Accept", "application/json")
+    .WithQuery("page", "1")
+    .WithQuery("limit", "10")
+    .GetAsync<List<User>>();
+
+// Or just get the raw string
+// (fluent API also supports string responses through instance methods)
+```
+
+## Advanced Usage
+
+### Configuration
+
+```csharp
+var config = new NexarConfig
+{
+    BaseUrl = "https://api.example.com",
+    DefaultHeaders = new Dictionary<string, string>
+    {
+        { "Accept", "application/json" }
+    },
+    TimeoutSeconds = 30,
+    MaxRetryAttempts = 3
+};
+
+var nexar = new Nexar(config);
+var response = await nexar.GetAsync<User>("/users/1");
+```
+
+### Authentication
+
+```csharp
+// Bearer Token
+var response = await nexar.Request()
+    .Url("/api/protected")
+    .WithBearerToken("your-jwt-token")
+    .GetAsync<Data>();
+
+// Basic Auth
+var response = await nexar.Request()
+    .Url("/api/protected")
+    .WithBasicAuth("username", "password")
+    .GetAsync<Data>();
+```
+
+### POST Request
+
+```csharp
+var user = new User
+{
+    Name = "John Doe",
+    Email = "john@example.com"
+};
+
+var response = await nexar.Request()
+    .Url("/api/users")
+    .PostAsync<User, UserResponse>(user);
+```
+
+For more examples, visit: https://github.com/BuzzSpire/Nexar
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions about using Nexar, please open an issue on GitHub, and I’ll be happy to help!
-
----
-
-Enhance your C# applications with the power of Nexar and streamline your API interactions today!
+This project is licensed under the MIT License.
