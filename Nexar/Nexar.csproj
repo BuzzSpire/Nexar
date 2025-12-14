@@ -4,16 +4,17 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>2.0.0</Version>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Title>Nexar - Simplified HTTP Requests for C#</Title>
-    <Description>Nexar is a powerful and user-friendly C# class designed for seamless communication with web APIs. With Nexar, sending and receiving HTTP requests has never been easier. Whether you need to perform simple GET requests or more complex POST operations, Nexar provides a clean and efficient interface to interact with web services.</Description>
+    <Title>Nexar - Modern HTTP Client for .NET</Title>
+    <Description>A powerful and intuitive HTTP client library for .NET. Write HTTP requests with a clean, modern API featuring static methods, typed responses, interceptors, retry mechanism, and fluent request builder. Similar to popular HTTP libraries but designed specifically for .NET developers.</Description>
     <Copyright>MIT</Copyright>
     <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
-    <PackageTags>C#, HttpClient, HTTP, Requests, REST, API, GET, POST, PUT, DELETE, PATCH, Head, Async, Asynchronous, .NET, Nexar, Web, API, Client, Library </PackageTags>
-    <PackageReleaseNotes>Alfa</PackageReleaseNotes>
+    <PackageTags>http;httpclient;rest;api;requests;async;fluent;interceptor;retry;dotnet;csharp;net9</PackageTags>
+    <PackageReleaseNotes>Major v2.0.0 Release: Added static methods (Nexar.Get, Post, etc.), typed responses (NexarResponse&lt;T&gt;), configuration system (NexarConfig), interceptors, fluent API request builder, retry mechanism with exponential backoff, authentication helpers, query string builder, and comprehensive unit tests (96 tests, 100% pass rate).</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageId>BuzzSpire.Nexar</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
