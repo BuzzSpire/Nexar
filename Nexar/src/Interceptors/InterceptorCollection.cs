@@ -1,11 +1,18 @@
+using System.Collections;
+
 namespace Nexar.Interceptors;
 
 /// <summary>
 /// Collection of interceptors.
 /// </summary>
-public class InterceptorCollection
+public class InterceptorCollection : IEnumerable<IInterceptor>
 {
     private readonly List<IInterceptor> _interceptors = new();
+
+    /// <summary>
+    /// Gets the number of interceptors in the collection.
+    /// </summary>
+    public int Count => _interceptors.Count;
 
     /// <summary>
     /// Adds an interceptor to the collection.
@@ -18,9 +25,9 @@ public class InterceptorCollection
     /// <summary>
     /// Removes an interceptor from the collection.
     /// </summary>
-    public void Remove(IInterceptor interceptor)
+    public bool Remove(IInterceptor interceptor)
     {
-        _interceptors.Remove(interceptor);
+        return _interceptors.Remove(interceptor);
     }
 
     /// <summary>
@@ -67,4 +74,34 @@ public class InterceptorCollection
             await interceptor.OnErrorAsync(exception);
         }
     }
+
+    /// <summary>
+    /// Alias for ExecuteRequestInterceptorsAsync.
+    /// </summary>
+    public Task<HttpRequestMessage> OnRequestAsync(HttpRequestMessage request)
+        => ExecuteRequestInterceptorsAsync(request);
+
+    /// <summary>
+    /// Alias for ExecuteResponseInterceptorsAsync.
+    /// </summary>
+    public Task<HttpResponseMessage> OnResponseAsync(HttpResponseMessage response)
+        => ExecuteResponseInterceptorsAsync(response);
+
+    /// <summary>
+    /// Alias for ExecuteErrorInterceptorsAsync.
+    /// </summary>
+    public Task OnErrorAsync(Exception exception)
+        => ExecuteErrorInterceptorsAsync(exception);
+
+    /// <summary>
+    /// Returns an enumerator that iterates through the collection.
+    /// </summary>
+    public IEnumerator<IInterceptor> GetEnumerator()
+        => _interceptors.GetEnumerator();
+
+    /// <summary>
+    /// Returns an enumerator that iterates through the collection.
+    /// </summary>
+    IEnumerator IEnumerable.GetEnumerator()
+        => GetEnumerator();
 }
