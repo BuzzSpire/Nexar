@@ -222,10 +222,10 @@ public class Nexar : INexar, IDisposable
         return method switch
         {
             "GET" => await instance.GetAsync<T>(url, options.Headers),
-            "POST" => await instance.PostAsync<object, T>(url, options.Headers, options.Data),
-            "PUT" => await instance.PutAsync<object, T>(url, options.Headers, options.Data),
+            "POST" => await instance.PostAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
+            "PUT" => await instance.PutAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
             "DELETE" => await instance.DeleteAsync<T>(url, options.Headers),
-            "PATCH" => await instance.PatchAsync<object, T>(url, options.Headers, options.Data),
+            "PATCH" => await instance.PatchAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
             "HEAD" => await instance.HeadAsync<T>(url, options.Headers),
             _ => throw new NotSupportedException($"HTTP method {method} is not supported")
         };
@@ -256,6 +256,15 @@ public class Nexar : INexar, IDisposable
         return await SendRequestAsync<TResponse>(HttpMethod.Post, url, headers, body);
     }
 
+    public async Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType)
+    {
+        return await SendRequestAsync<TResponse>(HttpMethod.Post, url, headers, body, contentType);
+    }
+
     public async Task<string> PutAsync<T>(string url, Dictionary<string, string> headers, T body)
     {
         var response = await PutAsync<T, string>(url, headers, body);
@@ -268,6 +277,15 @@ public class Nexar : INexar, IDisposable
         TRequest? body = default)
     {
         return await SendRequestAsync<TResponse>(HttpMethod.Put, url, headers, body);
+    }
+
+    public async Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType)
+    {
+        return await SendRequestAsync<TResponse>(HttpMethod.Put, url, headers, body, contentType);
     }
 
     public async Task<string> DeleteAsync(string url, Dictionary<string, string> headers)
@@ -295,6 +313,15 @@ public class Nexar : INexar, IDisposable
         return await SendRequestAsync<TResponse>(new HttpMethod("PATCH"), url, headers, body);
     }
 
+    public async Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType)
+    {
+        return await SendRequestAsync<TResponse>(new HttpMethod("PATCH"), url, headers, body, contentType);
+    }
+
     public async Task<string> HeadAsync(string url, Dictionary<string, string> headers)
     {
         var response = await HeadAsync<string>(url, headers);
@@ -306,11 +333,102 @@ public class Nexar : INexar, IDisposable
         return await SendRequestAsync<T>(HttpMethod.Head, url, headers, null);
     }
 
+    private HttpContent CreateHttpContent(object body, ContentType contentType)
+    {
+        switch (contentType)
+        {
+            case ContentType.Json:
+                var json = JsonSerializer.Serialize(body);
+                return new StringContent(json, Encoding.UTF8, "application/json");
+
+            case ContentType.FormUrlEncoded:
+                var formData = ConvertToKeyValuePairs(body);
+                return new FormUrlEncodedContent(formData);
+
+            case ContentType.FormData:
+                var multipartContent = new MultipartFormDataContent();
+                var formDataDict = ConvertToDictionary(body);
+
+                foreach (var kvp in formDataDict)
+                {
+                    if (kvp.Value is byte[] byteArray)
+                    {
+                        var byteContent = new ByteArrayContent(byteArray);
+                        multipartContent.Add(byteContent, kvp.Key, kvp.Key);
+                    }
+                    else if (kvp.Value is Stream stream)
+                    {
+                        var streamContent = new StreamContent(stream);
+                        multipartContent.Add(streamContent, kvp.Key, kvp.Key);
+                    }
+                    else
+                    {
+                        multipartContent.Add(new StringContent(kvp.Value?.ToString() ?? string.Empty), kvp.Key);
+                    }
+                }
+                return multipartContent;
+
+            case ContentType.Binary:
+                if (body is byte[] bytes)
+                {
+                    return new ByteArrayContent(bytes);
+                }
+                else if (body is Stream streamData)
+                {
+                    return new StreamContent(streamData);
+                }
+                else
+                {
+                    throw new ArgumentException("Binary content type requires byte[] or Stream data");
+                }
+
+            default:
+                throw new NotSupportedException($"Content type {contentType} is not supported");
+        }
+    }
+
+    private Dictionary<string, object> ConvertToDictionary(object body)
+    {
+        if (body is Dictionary<string, object> dictObj)
+        {
+            return dictObj;
+        }
+        else if (body is Dictionary<string, string> dictStr)
+        {
+            return dictStr.ToDictionary(kvp => kvp.Key, kvp => (object)kvp.Value);
+        }
+        else
+        {
+            var json = JsonSerializer.Serialize(body);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+            return dict ?? new Dictionary<string, object>();
+        }
+    }
+
+    private IEnumerable<KeyValuePair<string, string>> ConvertToKeyValuePairs(object body)
+    {
+        if (body is Dictionary<string, string> dictStr)
+        {
+            return dictStr;
+        }
+        else if (body is Dictionary<string, object> dictObj)
+        {
+            return dictObj.Select(kvp => new KeyValuePair<string, string>(kvp.Key, kvp.Value?.ToString() ?? string.Empty));
+        }
+        else
+        {
+            var json = JsonSerializer.Serialize(body);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            return dict ?? new Dictionary<string, string>();
+        }
+    }
+
     private async Task<NexarResponse<T>> SendRequestAsync<T>(
         HttpMethod method,
         string url,
         Dictionary<string, string>? headers,
-        object? body)
+        object? body,
+        ContentType contentType = ContentType.Json)
     {
         var attempt = 0;
         var maxAttempts = _config.MaxRetryAttempts + 1;
@@ -331,8 +449,7 @@ public class Nexar : INexar, IDisposable
 
                 if (body != null)
                 {
-                    var json = JsonSerializer.Serialize(body);
-                    request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                    request.Content = CreateHttpContent(body, contentType);
                 }
 
                 request = await _interceptors.ExecuteRequestInterceptorsAsync(request);
