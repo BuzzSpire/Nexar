@@ -38,6 +38,15 @@ public interface INexar
         TRequest? body = default);
 
     /// <summary>
+    /// Sends a POST request with specified content type and returns a typed response.
+    /// </summary>
+    Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType);
+
+    /// <summary>
     /// Sends a PUT request to the specified Uri as an asynchronous operation.
     /// </summary>
     /// <param name="url">The Url the request is sent to.</param>
@@ -53,6 +62,15 @@ public interface INexar
         string url,
         Dictionary<string, string>? headers = null,
         TRequest? body = default);
+
+    /// <summary>
+    /// Sends a PUT request with specified content type and returns a typed response.
+    /// </summary>
+    Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType);
 
     /// <summary>
     /// Sends a DELETE request to the specified Uri as an asynchronous operation.
@@ -83,6 +101,15 @@ public interface INexar
         string url,
         Dictionary<string, string>? headers = null,
         TRequest? body = default);
+
+    /// <summary>
+    /// Sends a PATCH request with specified content type and returns a typed response.
+    /// </summary>
+    Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(
+        string url,
+        Dictionary<string, string>? headers,
+        TRequest? body,
+        ContentType contentType);
 
     /// <summary>
     /// Sends a HEAD request to the specified Uri as an asynchronous operation.
