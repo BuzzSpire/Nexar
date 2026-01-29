@@ -1,7 +1,8 @@
 using Nexar;
 
 /// <summary>
-/// Examples showing non-generic (string) responses
+/// Examples showing raw string responses
+/// Tip: Run the sample runner in `samples/Nexar.samples` for a compact overview.
 /// </summary>
 public class NonGenericExample
 {
@@ -23,11 +24,12 @@ public class NonGenericExample
     {
         Console.WriteLine("1. Simple GET - Raw String Response:");
 
-        // No generic type needed - returns string directly
-        string response = await Nexar.Nexar.Get("https://freetestapi.com/api/v1/destinations/1");
+        // Use string as the response type to get raw JSON
+        var response = await Nexar.Nexar.Get<string>("https://freetestapi.com/api/v1/destinations/1");
+        var raw = response.Data ?? response.RawContent;
 
-        Console.WriteLine($"   Raw response: {response.Substring(0, Math.Min(100, response.Length))}...");
-        Console.WriteLine($"   Response length: {response.Length} characters\n");
+        Console.WriteLine($"   Raw response: {raw.Substring(0, Math.Min(100, raw.Length))}...");
+        Console.WriteLine($"   Response length: {raw.Length} characters\n");
     }
 
     static async Task StringPostExample()
@@ -40,10 +42,11 @@ public class NonGenericExample
             country = "Japan"
         };
 
-        // Returns raw string response
-        string response = await Nexar.Nexar.Post("https://freetestapi.com/api/v1/destinations", data);
+        // Use string as the response type to get raw JSON
+        var response = await Nexar.Nexar.Post<string>("https://freetestapi.com/api/v1/destinations", data);
+        var raw = response.Data ?? response.RawContent;
 
-        Console.WriteLine($"   Response: {response.Substring(0, Math.Min(80, response.Length))}...\n");
+        Console.WriteLine($"   Response: {raw.Substring(0, Math.Min(80, raw.Length))}...\n");
     }
 
     static async Task ManualJsonParseExample()
@@ -51,7 +54,8 @@ public class NonGenericExample
         Console.WriteLine("3. Manual JSON Parsing:");
 
         // Get raw JSON string
-        string jsonResponse = await Nexar.Nexar.Get("https://freetestapi.com/api/v1/destinations/1");
+        var response = await Nexar.Nexar.Get<string>("https://freetestapi.com/api/v1/destinations/1");
+        var jsonResponse = response.Data ?? response.RawContent;
 
         // Parse it yourself if needed
         try
@@ -84,11 +88,12 @@ public class ComparisonExample
 
         string url = "https://freetestapi.com/api/v1/destinations/1";
 
-        // Method 1: Non-Generic (String) - Simple, raw response
-        Console.WriteLine("Method 1: Non-Generic (returns string)");
-        string rawResponse = await Nexar.Nexar.Get(url);
-        Console.WriteLine($"   Type: {rawResponse.GetType().Name}");
-        Console.WriteLine($"   Value: {rawResponse.Substring(0, Math.Min(50, rawResponse.Length))}...\n");
+        // Method 1: Raw string response using string type
+        Console.WriteLine("Method 1: String response");
+        var rawResponse = await Nexar.Nexar.Get<string>(url);
+        var rawValue = rawResponse.Data ?? rawResponse.RawContent;
+        Console.WriteLine($"   Type: {rawValue.GetType().Name}");
+        Console.WriteLine($"   Value: {rawValue.Substring(0, Math.Min(50, rawValue.Length))}...\n");
 
         // Method 2: Generic - Typed, automatic deserialization
         Console.WriteLine("Method 2: Generic (returns NexarResponse<T>)");

@@ -16,9 +16,9 @@ public class NexarConfig
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 
     /// <summary>
-    /// Request timeout in seconds. Default is 100 seconds.
+    /// Request timeout in milliseconds. Default is 100000ms (100 seconds).
     /// </summary>
-    public int TimeoutSeconds { get; set; } = 100;
+    public int TimeoutMs { get; set; } = 100_000;
 
     /// <summary>
     /// Maximum number of retry attempts for failed requests. Default is 0 (no retry).

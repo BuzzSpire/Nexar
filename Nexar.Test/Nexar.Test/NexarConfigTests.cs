@@ -17,7 +17,7 @@ public class NexarConfigTests
         Assert.Null(config.BaseUrl);
         Assert.NotNull(config.DefaultHeaders);
         Assert.Empty(config.DefaultHeaders);
-        Assert.Equal(100, config.TimeoutSeconds);
+        Assert.Equal(100_000, config.TimeoutMs);
         Assert.Equal(0, config.MaxRetryAttempts);
         Assert.Equal(1000, config.RetryDelayMilliseconds);
         Assert.True(config.UseExponentialBackoff);
@@ -55,16 +55,16 @@ public class NexarConfigTests
     }
 
     [Fact]
-    public void TimeoutSeconds_CanBeSet()
+    public void TimeoutMs_CanBeSet()
     {
         // Arrange
         var config = new NexarConfig();
 
         // Act
-        config.TimeoutSeconds = 30;
+        config.TimeoutMs = 30_000;
 
         // Assert
-        Assert.Equal(30, config.TimeoutSeconds);
+        Assert.Equal(30_000, config.TimeoutMs);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class NexarConfigTests
             {
                 { "Accept", "application/json" }
             },
-            TimeoutSeconds = 60,
+            TimeoutMs = 60_000,
             MaxRetryAttempts = 5,
             RetryDelayMilliseconds = 500,
             UseExponentialBackoff = false,
@@ -140,7 +140,7 @@ public class NexarConfigTests
         // Assert
         Assert.Equal("https://api.example.com", config.BaseUrl);
         Assert.Single(config.DefaultHeaders);
-        Assert.Equal(60, config.TimeoutSeconds);
+        Assert.Equal(60_000, config.TimeoutMs);
         Assert.Equal(5, config.MaxRetryAttempts);
         Assert.Equal(500, config.RetryDelayMilliseconds);
         Assert.False(config.UseExponentialBackoff);
@@ -169,20 +169,20 @@ public class NexarConfigTests
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(30)]
-    [InlineData(100)]
-    [InlineData(300)]
-    public void TimeoutSeconds_WithVariousValues_SetsCorrectly(int timeout)
+    [InlineData(1_000)]
+    [InlineData(30_000)]
+    [InlineData(100_000)]
+    [InlineData(300_000)]
+    public void TimeoutMs_WithVariousValues_SetsCorrectly(int timeout)
     {
         // Arrange
         var config = new NexarConfig();
 
         // Act
-        config.TimeoutSeconds = timeout;
+        config.TimeoutMs = timeout;
 
         // Assert
-        Assert.Equal(timeout, config.TimeoutSeconds);
+        Assert.Equal(timeout, config.TimeoutMs);
     }
 
     [Theory]

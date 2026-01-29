@@ -47,11 +47,6 @@ public class RequestOptions
     public Dictionary<string, string>? Headers { get; set; }
 
     /// <summary>
-    /// URL parameters (query string).
-    /// </summary>
-    public Dictionary<string, string>? Params { get; set; }
-
-    /// <summary>
     /// Request body data.
     /// For Json: any object that can be serialized to JSON.
     /// For FormUrlEncoded and FormData: Dictionary&lt;string, string&gt; or Dictionary&lt;string, object&gt;.
@@ -73,11 +68,6 @@ public class RequestOptions
     /// Base URL to be prepended to url.
     /// </summary>
     public string? BaseURL { get; set; }
-
-    /// <summary>
-    /// Response type (json, text, blob, etc.).
-    /// </summary>
-    public string ResponseType { get; set; } = "json";
 
     /// <summary>
     /// Maximum retry attempts.

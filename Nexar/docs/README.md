@@ -1,18 +1,6 @@
 # Nexar
 
-Nexar is a powerful and user-friendly C# HTTP client library. It provides a clean and intuitive API for making HTTP requests in .NET applications, making web API communication effortless and enjoyable.
-
-## Features
-
-- **Fluent API**: Chainable methods for building requests with ease
-- **Typed Responses**: Generic response types with automatic JSON deserialization
-- **Configuration**: BaseURL, default headers, timeout, and more
-- **Interceptors**: Request and response interceptors for logging, authentication, etc.
-- **Retry Mechanism**: Automatic retry with exponential backoff
-- **Authentication Helpers**: Built-in support for Bearer tokens, Basic Auth, and API keys
-- **Query String Builder**: Easy-to-use query parameter construction
-- **Asynchronous**: Fully async/await support for responsive applications
-- **Error Handling**: Comprehensive error handling with detailed response information
+Nexar is a lightweight and ergonomic HTTP client for .NET with static helpers, a fluent request builder, and typed responses.
 
 ## Installation
 
@@ -22,107 +10,97 @@ dotnet add package BuzzSpire.Nexar
 
 ## Quick Start
 
-### Basic GET Request
+```csharp
+using Nexar;
+using Nexar.Configuration;
+using Nexar.Models;
+```
+
+### Static Methods
 
 ```csharp
-// Simple: Just get the raw JSON string
-string response = await Nexar.Get("https://api.example.com/users/1");
-Console.WriteLine(response);
-
-// With typed response
 var response = await Nexar.Get<User>("https://api.example.com/users/1");
 if (response.IsSuccess && response.Data != null)
 {
-    Console.WriteLine($"User: {response.Data.Name}");
-    Console.WriteLine($"Status: {response.Status}");
+    Console.WriteLine(response.Data.Name);
 }
 ```
 
-### POST Request
+### Raw Response
 
 ```csharp
-var newUser = new { Name = "John", Email = "john@example.com" };
-
-// Simple: Returns string
-string response = await Nexar.Post("https://api.example.com/users", newUser);
-
-// Typed: Returns NexarResponse<User>
-var response = await Nexar.Post<User>("https://api.example.com/users", newUser);
-if (response.IsSuccess)
-{
-    Console.WriteLine($"Created: {response.Data.Id}");
-}
+var raw = await Nexar.Get<string>("https://api.example.com/users/1");
+Console.WriteLine(raw.Data ?? raw.RawContent);
 ```
 
 ### Fluent API
 
 ```csharp
-var api = Nexar.Create();
-
-// Get typed response
-var response = await api.Request()
-    .Url("https://api.example.com/users")
+var response = await Nexar.Create()
+    .Request()
+    .Url("https://api.example.com/search")
     .WithHeader("Accept", "application/json")
-    .WithQuery("page", "1")
-    .WithQuery("limit", "10")
-    .GetAsync<List<User>>();
-
-// Or just get the raw string
-// (fluent API also supports string responses through instance methods)
+    .WithQuery("q", "nexar")
+    .WithQuery("limit", 10)
+    .GetAsync<SearchResults>();
 ```
 
-## Advanced Usage
-
-### Configuration
+## Configuration
 
 ```csharp
-var config = new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
     BaseUrl = "https://api.example.com",
-    DefaultHeaders = new Dictionary<string, string>
-    {
-        { "Accept", "application/json" }
-    },
-    TimeoutSeconds = 30,
+    TimeoutMs = 30_000,
     MaxRetryAttempts = 3
-};
-
-var nexar = new Nexar(config);
-var response = await nexar.GetAsync<User>("/users/1");
+});
 ```
 
-### Authentication
+## Content Types
 
 ```csharp
-// Bearer Token
-var response = await nexar.Request()
-    .Url("/api/protected")
-    .WithBearerToken("your-jwt-token")
-    .GetAsync<Data>();
-
-// Basic Auth
-var response = await nexar.Request()
-    .Url("/api/protected")
-    .WithBasicAuth("username", "password")
-    .GetAsync<Data>();
-```
-
-### POST Request
-
-```csharp
-var user = new User
+var formData = new Dictionary<string, object>
 {
-    Name = "John Doe",
-    Email = "john@example.com"
+    { "title", "My Document" },
+    { "file", fileBytes }
 };
 
-var response = await nexar.Request()
-    .Url("/api/users")
-    .PostAsync<User, UserResponse>(user);
+var response = await api.PostAsync<Dictionary<string, object>, string>(
+    "/upload",
+    null,
+    formData,
+    ContentType.FormData);
 ```
 
-For more examples, visit: https://github.com/BuzzSpire/Nexar
+## Interceptors
 
-## License
+```csharp
+public class LoggingInterceptor : IInterceptor
+{
+    public Task<HttpRequestMessage> OnRequestAsync(HttpRequestMessage request)
+    {
+        Console.WriteLine($"-> {request.Method} {request.RequestUri}");
+        return Task.FromResult(request);
+    }
 
-This project is licensed under the MIT License.
+    public Task<HttpResponseMessage> OnResponseAsync(HttpResponseMessage response)
+    {
+        Console.WriteLine($"<- {response.StatusCode}");
+        return Task.FromResult(response);
+    }
+
+    public Task OnErrorAsync(Exception exception)
+    {
+        Console.WriteLine($"Error: {exception.Message}");
+        return Task.CompletedTask;
+    }
+}
+
+var api = Nexar.Create();
+api.Interceptors.Add(new LoggingInterceptor());
+```
+
+## More Examples
+
+- Samples: `../../samples`
+- Getting Started: `../../docs/GetStarted.md`

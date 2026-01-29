@@ -57,12 +57,13 @@ public class NexarTests
     {
         // Call the GetAsync method and verify the response.
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
-        var result = await _nexar.GetAsync("https://jsonplaceholder.typicode.com/posts/1", headers);
+        var result = await _nexar.GetAsync<string>("https://jsonplaceholder.typicode.com/posts/1", headers);
 
-        // Verify we got a response (data may vary, so just check it's valid JSON)
+        // Verify we got a response
         Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        Assert.Contains("id", result.ToLower());
+        Assert.NotNull(result.RawContent);
+        Assert.NotEmpty(result.RawContent);
+        Assert.Contains("id", result.RawContent.ToLower());
     }
 
     /// <summary>
@@ -81,7 +82,7 @@ public class NexarTests
         var test1Failed = false;
         try
         {
-            var result1 = await _nexar.GetAsync("not-a-valid-url-at-all", headers);
+            var result1 = await _nexar.GetAsync<string>("not-a-valid-url-at-all", headers);
             // If it doesn't throw, it should at least fail
             test1Failed = true;
         }
@@ -114,9 +115,11 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PostAsync("https://fakestoreapi.com/products", headers, body);
+            await _nexar.PostAsync<object, string>("https://fakestoreapi.com/products", headers, body);
 
-        Assert.Equal(JsonSerializer.Serialize(body), result);
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(JsonSerializer.Serialize(body), result.RawContent);
     }
 
     /// <summary>
@@ -139,9 +142,11 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PutAsync("https://fakestoreapi.com/products/21", headers, body);
+            await _nexar.PutAsync<object, string>("https://fakestoreapi.com/products/21", headers, body);
 
-        Assert.Equal(JsonSerializer.Serialize(body), result);
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(JsonSerializer.Serialize(body), result.RawContent);
     }
 
     /// <summary>
@@ -154,12 +159,12 @@ public class NexarTests
         var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
 
         // Use jsonplaceholder which is more reliable
-        var result = _nexar.DeleteAsync("https://jsonplaceholder.typicode.com/posts/1", headers);
+        var result = await _nexar.DeleteAsync<string>("https://jsonplaceholder.typicode.com/posts/1", headers);
 
-        var actual = await result;
-        Assert.NotNull(actual);
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
         // DELETE typically returns empty object {} or the deleted resource
-        Assert.True(actual == "{}" || actual.Contains("id"),
+        Assert.True(result.RawContent == "{}" || result.RawContent.Contains("id"),
             "DELETE should return empty object or deleted resource");
     }
 
@@ -183,8 +188,26 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PatchAsync("https://fakestoreapi.com/products/21", headers, body);
+            await _nexar.PatchAsync<object, string>("https://fakestoreapi.com/products/21", headers, body);
 
-        Assert.Equal(JsonSerializer.Serialize(body), result);
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(JsonSerializer.Serialize(body), result.RawContent);
+    }
+
+    /// <summary>
+    ///  Test case for the HeadAsync method of the Nexar class.
+    ///  This test verifies that the method returns a successful response.
+    /// </summary>
+    [Fact]
+    public async Task HeadAsync_ReturnsSuccessfulResponse()
+    {
+        var headers = new Dictionary<string, string> { { "Accept", "application/json" } };
+
+        var result = await _nexar.HeadAsync<string>("https://jsonplaceholder.typicode.com/posts/1", headers);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
     }
 }

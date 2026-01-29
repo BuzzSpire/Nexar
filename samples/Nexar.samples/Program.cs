@@ -30,7 +30,10 @@ partial class Program
         // Example 7: Interceptors
         await InterceptorExample();
 
-        // Example 8: Legacy API (backward compatible)
+        // Example 8: Raw string responses
+        await RawStringExample();
+
+        // Example 9: Legacy API (backward compatible)
         await LegacyApiExample();
 
         Console.WriteLine("\n=== All examples completed ===");
@@ -65,7 +68,7 @@ partial class Program
                 { "Accept", "application/json" },
                 { "User-Agent", "Nexar/1.0" }
             },
-            TimeoutSeconds = 30
+            TimeoutMs = 30_000
         });
 
         // Now use relative URLs
