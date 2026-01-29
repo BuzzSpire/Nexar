@@ -122,13 +122,19 @@ public class NexarRequestBuilder
         return this;
     }
 
+    private string BuildUrl()
+    {
+        if (string.IsNullOrEmpty(_url))
+            throw new InvalidOperationException("URL must be set before sending a request. Use .Url() method.");
+        return _url + _queryBuilder.Build();
+    }
+
     /// <summary>
     /// Sends a GET request.
     /// </summary>
     public async Task<NexarResponse<T>> GetAsync<T>()
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.GetAsync<T>(fullUrl, _headers);
+        return await _nexar.GetAsync<T>(BuildUrl(), _headers);
     }
 
     /// <summary>
@@ -136,8 +142,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PostAsync<TResponse>()
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PostAsync<object, TResponse>(fullUrl, _headers, _body, _contentType);
+        return await _nexar.PostAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
     }
 
     /// <summary>
@@ -145,8 +150,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(TRequest body)
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PostAsync<TRequest, TResponse>(fullUrl, _headers, body, _contentType);
+        return await _nexar.PostAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
     }
 
     /// <summary>
@@ -154,8 +158,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PutAsync<TResponse>()
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PutAsync<object, TResponse>(fullUrl, _headers, _body, _contentType);
+        return await _nexar.PutAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
     }
 
     /// <summary>
@@ -163,8 +166,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(TRequest body)
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PutAsync<TRequest, TResponse>(fullUrl, _headers, body, _contentType);
+        return await _nexar.PutAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
     }
 
     /// <summary>
@@ -172,8 +174,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<T>> DeleteAsync<T>()
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.DeleteAsync<T>(fullUrl, _headers);
+        return await _nexar.DeleteAsync<T>(BuildUrl(), _headers);
     }
 
     /// <summary>
@@ -181,8 +182,7 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PatchAsync<TResponse>()
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PatchAsync<object, TResponse>(fullUrl, _headers, _body, _contentType);
+        return await _nexar.PatchAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
     }
 
     /// <summary>
@@ -190,7 +190,6 @@ public class NexarRequestBuilder
     /// </summary>
     public async Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(TRequest body)
     {
-        var fullUrl = _url + _queryBuilder.Build();
-        return await _nexar.PatchAsync<TRequest, TResponse>(fullUrl, _headers, body, _contentType);
+        return await _nexar.PatchAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
     }
 }

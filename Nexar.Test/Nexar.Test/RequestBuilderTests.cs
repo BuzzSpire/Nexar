@@ -271,6 +271,73 @@ public class RequestBuilderTests : IDisposable
         Assert.True(response.IsSuccess);
     }
 
+    [Fact]
+    public async Task RequestBuilder_WithoutUrl_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .GetAsync<object>();
+        });
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithEmptyUrl_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .Url("")
+                .GetAsync<object>();
+        });
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithoutUrl_PostAsync_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .PostAsync<object>();
+        });
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithoutUrl_PutAsync_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .PutAsync<object>();
+        });
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithoutUrl_DeleteAsync_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .DeleteAsync<object>();
+        });
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithoutUrl_PatchAsync_ThrowsInvalidOperationException()
+    {
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _nexar.Request()
+                .PatchAsync<object>();
+        });
+    }
+
     public void Dispose()
     {
         _nexar?.Dispose();

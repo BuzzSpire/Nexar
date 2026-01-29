@@ -1,6 +1,6 @@
 # Getting Started with Nexar
 
-Nexar is a powerful and intuitive HTTP client library for .NET that makes API requests simple and enjoyable.
+Nexar is a lightweight and intuitive HTTP client library for .NET that makes API requests simple and ergonomic.
 
 ## Installation
 
@@ -10,65 +10,51 @@ dotnet add package BuzzSpire.Nexar
 
 ## Quick Start
 
-### 1. Simple GET Request (Static Method)
-
-The easiest way to make a request:
-
 ```csharp
 using Nexar;
+using Nexar.Configuration;
+using Nexar.Models;
+```
 
-// Option A: Simple string response (no generic type)
-string response = await Nexar.Nexar.Get("https://api.example.com/users/1");
-Console.WriteLine(response); // Raw JSON string
+### 1. Simple GET Request (Static Method)
 
-// Option B: Typed response (with automatic deserialization)
-var response = await Nexar.Nexar.Get<User>("https://api.example.com/users/1");
+```csharp
+var response = await Nexar.Get<User>("https://api.example.com/users/1");
 
-if (response.IsSuccess)
+if (response.IsSuccess && response.Data != null)
 {
     Console.WriteLine($"User: {response.Data.Name}");
-    Console.WriteLine($"Status: {response.Status}"); // 200
-}
-else
-{
-    Console.WriteLine($"Error: {response.ErrorMessage}");
+    Console.WriteLine($"Status: {response.Status}");
 }
 ```
 
-**When to use which?**
-- Use **string version** when you need raw JSON or want to parse manually
-- Use **typed version** when you want automatic deserialization and type safety
+### 2. Raw Response Text
 
-### 2. POST Request
+```csharp
+var raw = await Nexar.Get<string>("https://api.example.com/users/1");
+Console.WriteLine(raw.Data ?? raw.RawContent);
+```
+
+### 3. POST Request
 
 ```csharp
 var newUser = new { Name = "John", Email = "john@example.com" };
 
-// Option A: String response
-string response = await Nexar.Nexar.Post(
-    "https://api.example.com/users",
-    newUser
-);
-Console.WriteLine($"Response: {response}");
-
-// Option B: Typed response
-var typedResponse = await Nexar.Nexar.Post<User>(
+var response = await Nexar.Post<User>(
     "https://api.example.com/users",
     newUser
 );
 
-if (typedResponse.IsSuccess)
+if (response.IsSuccess && response.Data != null)
 {
-    Console.WriteLine($"Created user with ID: {typedResponse.Data.Id}");
+    Console.WriteLine($"Created user with ID: {response.Data.Id}");
 }
 ```
 
-### 3. Creating a Configured Instance
-
-For multiple requests to the same API:
+### 4. Creating a Configured Instance
 
 ```csharp
-var api = Nexar.Nexar.Create(new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
     BaseUrl = "https://api.example.com",
     DefaultHeaders = new Dictionary<string, string>
@@ -76,18 +62,17 @@ var api = Nexar.Nexar.Create(new NexarConfig
         { "Accept", "application/json" },
         { "Authorization", "Bearer your-token" }
     },
-    TimeoutSeconds = 30
+    TimeoutMs = 30_000
 });
 
-// Now use relative URLs
 var user = await api.GetAsync<User>("/users/1");
 var posts = await api.GetAsync<List<Post>>("/users/1/posts");
 ```
 
-### 4. Using Fluent API
+### 5. Using the Fluent API
 
 ```csharp
-var response = await Nexar.Nexar.Create()
+var response = await Nexar.Create()
     .Request()
     .Url("https://api.example.com/search")
     .WithHeader("Accept", "application/json")
@@ -97,10 +82,10 @@ var response = await Nexar.Nexar.Create()
     .GetAsync<SearchResults>();
 ```
 
-### 5. Request Configuration Object
+### 6. RequestOptions
 
 ```csharp
-var response = await Nexar.Nexar.Request<User>(new RequestOptions
+var response = await Nexar.Request<User>(new RequestOptions
 {
     Method = "GET",
     Url = "https://api.example.com/users/1",
@@ -117,7 +102,7 @@ var response = await Nexar.Nexar.Request<User>(new RequestOptions
 All responses include:
 
 ```csharp
-var response = await Nexar.Nexar.Get<User>("/users/1");
+var response = await Nexar.Get<User>("/users/1");
 
 response.Data           // Deserialized data (User object)
 response.Status         // HTTP status code (200)
@@ -133,7 +118,7 @@ response.ErrorMessage   // Error message if failed
 ### Error Handling
 
 ```csharp
-var response = await Nexar.Nexar.Get<User>("/users/1");
+var response = await Nexar.Get<User>("/users/1");
 
 if (!response.IsSuccess)
 {
@@ -145,27 +130,29 @@ if (!response.IsSuccess)
     return;
 }
 
-// Use response.Data safely
-Console.WriteLine(response.Data.Name);
+Console.WriteLine(response.Data?.Name);
 ```
 
 ### Authentication
 
 ```csharp
 // Bearer Token
-var response = await api.Request()
+var response = await Nexar.Create()
+    .Request()
     .Url("/protected")
     .WithBearerToken("your-jwt-token")
     .GetAsync<Data>();
 
 // Basic Auth
-var response = await api.Request()
+var response = await Nexar.Create()
+    .Request()
     .Url("/protected")
     .WithBasicAuth("username", "password")
     .GetAsync<Data>();
 
 // API Key
-var response = await api.Request()
+var response = await Nexar.Create()
+    .Request()
     .Url("/protected")
     .WithApiKey("X-API-Key", "your-key")
     .GetAsync<Data>();
@@ -174,7 +161,8 @@ var response = await api.Request()
 ### Query Parameters
 
 ```csharp
-var response = await api.Request()
+var response = await Nexar.Create()
+    .Request()
     .Url("/users")
     .WithQuery("page", 1)
     .WithQuery("limit", 20)
@@ -189,77 +177,69 @@ var response = await api.Request()
 ```csharp
 public class LoggingInterceptor : IInterceptor
 {
-    public async Task<HttpRequestMessage> OnRequestAsync(HttpRequestMessage request)
+    public Task<HttpRequestMessage> OnRequestAsync(HttpRequestMessage request)
     {
-        Console.WriteLine($"→ {request.Method} {request.RequestUri}");
-        return request;
+        Console.WriteLine($"-> {request.Method} {request.RequestUri}");
+        return Task.FromResult(request);
     }
 
-    public async Task<HttpResponseMessage> OnResponseAsync(HttpResponseMessage response)
+    public Task<HttpResponseMessage> OnResponseAsync(HttpResponseMessage response)
     {
-        Console.WriteLine($"← {response.StatusCode}");
-        return response;
+        Console.WriteLine($"<- {response.StatusCode}");
+        return Task.FromResult(response);
     }
 
-    public async Task OnErrorAsync(Exception exception)
+    public Task OnErrorAsync(Exception exception)
     {
-        Console.WriteLine($"✗ {exception.Message}");
+        Console.WriteLine($"Error: {exception.Message}");
+        return Task.CompletedTask;
     }
 }
 
-var api = Nexar.Nexar.Create();
+var api = Nexar.Create();
 api.Interceptors.Add(new LoggingInterceptor());
 ```
 
 ## Available Static Methods
 
-Each method has two versions:
+All static methods return `NexarResponse<T>`:
 
-**String Response (Simple):**
-- `Nexar.Get(url)` - GET request, returns string
-- `Nexar.Post(url, data)` - POST request, returns string
-- `Nexar.Put(url, data)` - PUT request, returns string
-- `Nexar.Delete(url)` - DELETE request, returns string
-- `Nexar.Patch(url, data)` - PATCH request, returns string
-- `Nexar.Head(url)` - HEAD request, returns string
-
-**Typed Response (Advanced):**
-- `Nexar.Get<T>(url)` - GET request, returns NexarResponse<T>
-- `Nexar.Post<T>(url, data)` - POST request, returns NexarResponse<T>
-- `Nexar.Put<T>(url, data)` - PUT request, returns NexarResponse<T>
-- `Nexar.Delete<T>(url)` - DELETE request, returns NexarResponse<T>
-- `Nexar.Patch<T>(url, data)` - PATCH request, returns NexarResponse<T>
-- `Nexar.Head<T>(url)` - HEAD request, returns NexarResponse<T>
-- `Nexar.Request<T>(options)` - Request with config, returns NexarResponse<T>
+- `Nexar.Get<T>(url, options?)`
+- `Nexar.Post<T>(url, data?, options?)`
+- `Nexar.Put<T>(url, data?, options?)`
+- `Nexar.Delete<T>(url, options?)`
+- `Nexar.Patch<T>(url, data?, options?)`
+- `Nexar.Head<T>(url, options?)`
+- `Nexar.Request<T>(options)`
 
 ## Advanced Configuration
 
 ### Retry with Exponential Backoff
 
 ```csharp
-var api = Nexar.Nexar.Create(new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
     MaxRetryAttempts = 3,
     RetryDelayMilliseconds = 1000,
-    UseExponentialBackoff = true  // 1s, 2s, 4s
+    UseExponentialBackoff = true
 });
 ```
 
 ### Custom Timeout
 
 ```csharp
-var api = Nexar.Nexar.Create(new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
-    TimeoutSeconds = 60
+    TimeoutMs = 60_000
 });
 ```
 
 ### Disable SSL Validation (Development Only)
 
 ```csharp
-var api = Nexar.Nexar.Create(new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
-    ValidateSslCertificates = false  // Only for development!
+    ValidateSslCertificates = false
 });
 ```
 
@@ -269,34 +249,31 @@ var api = Nexar.Nexar.Create(new NexarConfig
 using Nexar;
 using Nexar.Configuration;
 
-// Create configured client
-var api = Nexar.Nexar.Create(new NexarConfig
+var api = Nexar.Create(new NexarConfig
 {
     BaseUrl = "https://api.example.com",
     DefaultHeaders = new Dictionary<string, string>
     {
         { "Accept", "application/json" }
     },
-    TimeoutSeconds = 30,
+    TimeoutMs = 30_000,
     MaxRetryAttempts = 3
 });
 
 try
 {
-    // GET request
     var user = await api.GetAsync<User>("/users/1");
 
     if (user.IsSuccess)
     {
-        Console.WriteLine($"User: {user.Data.Name}");
+        Console.WriteLine($"User: {user.Data?.Name}");
 
-        // POST request
         var newPost = new { Title = "Hello", Content = "World" };
-        var post = await api.PostAsync<Post, PostResponse>("/posts", null, newPost);
+        var post = await api.PostAsync<object, PostResponse>("/posts", null, newPost);
 
         if (post.IsSuccess)
         {
-            Console.WriteLine($"Created post: {post.Data.Id}");
+            Console.WriteLine($"Created post: {post.Data?.Id}");
         }
     }
 }
@@ -308,10 +285,8 @@ catch (Exception ex)
 
 ## Next Steps
 
-- Check out the [samples](../samples) directory for more examples
-- Read the full [API Reference](../README.md#api-reference)
-- Learn about [Interceptors](../README.md#interceptors)
-- Explore [Authentication options](../README.md#authentication)
+- Check out the `../samples` directory for more examples
+- Read the full API reference in `../README.md`
 
 ## Need Help?
 

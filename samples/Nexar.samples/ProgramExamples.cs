@@ -33,10 +33,19 @@ partial class Program
         Console.WriteLine($"   Completed with interceptor\n");
     }
 
-    // Backward compatible - old API still works
+    static async Task RawStringExample()
+    {
+        Console.WriteLine("8. Raw string response:");
+
+        var response = await Nexar.Nexar.Get<string>("https://freetestapi.com/api/v1/destinations/1");
+        var raw = response.Data ?? response.RawContent;
+
+        Console.WriteLine($"   Raw response: {raw.Substring(0, Math.Min(50, raw.Length))}...\n");
+    }
+
     static async Task LegacyApiExample()
     {
-        Console.WriteLine("8. Legacy API (Backward Compatible):");
+        Console.WriteLine("9. Instance API:");
 
         var nexar = new Nexar.Nexar();
         var headers = new Dictionary<string, string>
@@ -46,9 +55,8 @@ partial class Program
 
         try
         {
-            // Old style still works
-            var response = await nexar.GetAsync("https://freetestapi.com/api/v1/destinations/1", headers);
-            Console.WriteLine($"   Old API works: {response.Substring(0, Math.Min(50, response.Length))}...\n");
+            var response = await nexar.GetAsync<string>("https://freetestapi.com/api/v1/destinations/1", headers);
+            Console.WriteLine($"   Instance API works: {response.RawContent.Substring(0, Math.Min(50, response.RawContent.Length))}...\n");
         }
         finally
         {

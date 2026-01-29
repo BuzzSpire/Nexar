@@ -6,7 +6,7 @@ using NexarLib = Nexar;
 namespace Nexar.Test;
 
 /// <summary>
-/// Unit tests for Nexar static methods (both generic and non-generic versions)
+/// Unit tests for Nexar static methods
 /// </summary>
 public class StaticMethodsTests : IDisposable
 {
@@ -19,18 +19,18 @@ public class StaticMethodsTests : IDisposable
     }
 
     [Fact]
-    public async Task Get_NonGeneric_ReturnsString()
+    public async Task Get_ReturnsNexarResponse()
     {
         // Arrange
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await NexarLib.Nexar.Get(url);
+        var result = await NexarLib.Nexar.Get<string>(url);
 
         // Assert
         Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        Assert.IsType<string>(result);
+        Assert.NotNull(result.RawContent);
+        Assert.NotEmpty(result.RawContent);
     }
 
     [Fact]
@@ -70,19 +70,19 @@ public class StaticMethodsTests : IDisposable
     }
 
     [Fact]
-    public async Task Post_NonGeneric_ReturnsString()
+    public async Task Post_ReturnsNexarResponse()
     {
         // Arrange
         var url = "https://jsonplaceholder.typicode.com/posts";
         var postData = new { title = "Test", body = "Test body", userId = 1 };
 
         // Act
-        var result = await NexarLib.Nexar.Post(url, postData);
+        var result = await NexarLib.Nexar.Post<string>(url, postData);
 
         // Assert
         Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        Assert.IsType<string>(result);
+        Assert.NotNull(result.RawContent);
+        Assert.NotEmpty(result.RawContent);
     }
 
     [Fact]
@@ -103,19 +103,19 @@ public class StaticMethodsTests : IDisposable
     }
 
     [Fact]
-    public async Task Put_NonGeneric_ReturnsString()
+    public async Task Put_ReturnsNexarResponse()
     {
         // Arrange
         var url = "https://jsonplaceholder.typicode.com/posts/1";
         var putData = new { id = 1, title = "Updated", body = "Updated body", userId = 1 };
 
         // Act
-        var result = await NexarLib.Nexar.Put(url, putData);
+        var result = await NexarLib.Nexar.Put<string>(url, putData);
 
         // Assert
         Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        Assert.IsType<string>(result);
+        Assert.NotNull(result.RawContent);
+        Assert.NotEmpty(result.RawContent);
     }
 
     [Fact]
@@ -136,17 +136,17 @@ public class StaticMethodsTests : IDisposable
     }
 
     [Fact]
-    public async Task Delete_NonGeneric_ReturnsString()
+    public async Task Delete_ReturnsNexarResponse()
     {
         // Arrange
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await NexarLib.Nexar.Delete(url);
+        var result = await NexarLib.Nexar.Delete<string>(url);
 
         // Assert
         Assert.NotNull(result);
-        Assert.IsType<string>(result);
+        Assert.True(result.IsSuccess);
     }
 
     [Fact]
@@ -165,19 +165,19 @@ public class StaticMethodsTests : IDisposable
     }
 
     [Fact]
-    public async Task Patch_NonGeneric_ReturnsString()
+    public async Task Patch_ReturnsNexarResponse()
     {
         // Arrange
         var url = "https://jsonplaceholder.typicode.com/posts/1";
         var patchData = new { title = "Patched Title" };
 
         // Act
-        var result = await NexarLib.Nexar.Patch(url, patchData);
+        var result = await NexarLib.Nexar.Patch<string>(url, patchData);
 
         // Assert
         Assert.NotNull(result);
-        Assert.NotEmpty(result);
-        Assert.IsType<string>(result);
+        Assert.NotNull(result.RawContent);
+        Assert.NotEmpty(result.RawContent);
     }
 
     [Fact]
@@ -217,6 +217,172 @@ public class StaticMethodsTests : IDisposable
         Assert.NotNull(result);
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Data);
+    }
+
+    [Fact]
+    public async Task Head_ReturnsNexarResponse()
+    {
+        // Arrange
+        var url = "https://jsonplaceholder.typicode.com/posts/1";
+
+        // Act
+        var result = await NexarLib.Nexar.Head<string>(url);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithGetMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "GET"
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+        Assert.NotEmpty(result.RawContent);
+    }
+
+    [Fact]
+    public async Task Request_WithPostMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts",
+            Method = "POST",
+            Data = new { title = "Test", body = "Test body", userId = 1 }
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(201, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithPutMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "PUT",
+            Data = new { id = 1, title = "Updated", body = "Updated body", userId = 1 }
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithDeleteMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "DELETE"
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithPatchMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "PATCH",
+            Data = new { title = "Patched" }
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithHeadMethod_RoutesCorrectly()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "HEAD"
+        };
+
+        // Act
+        var result = await NexarLib.Nexar.Request<string>(options);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(200, result.Status);
+    }
+
+    [Fact]
+    public async Task Request_WithUnsupportedMethod_ThrowsNotSupportedException()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Url = "https://jsonplaceholder.typicode.com/posts/1",
+            Method = "OPTIONS"
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<NotSupportedException>(async () =>
+        {
+            await NexarLib.Nexar.Request<string>(options);
+        });
+    }
+
+    [Fact]
+    public async Task Request_WithNullUrl_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var options = new RequestOptions
+        {
+            Method = "GET"
+        };
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+        {
+            await NexarLib.Nexar.Request<string>(options);
+        });
     }
 
     public void Dispose()
