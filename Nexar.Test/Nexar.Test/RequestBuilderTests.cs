@@ -1,4 +1,5 @@
 using Nexar.Configuration;
+using Nexar.Models;
 
 namespace Nexar.Test;
 
@@ -204,6 +205,70 @@ public class RequestBuilderTests : IDisposable
         Assert.NotNull(builder1);
         Assert.NotNull(builder2);
         Assert.NotSame(builder1, builder2);
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithContentType_FormUrlEncoded()
+    {
+        // Arrange
+        var formData = new Dictionary<string, string>
+        {
+            { "key1", "value1" },
+            { "key2", "value2" }
+        };
+
+        // Act
+        var response = await _nexar.Request()
+            .Url("https://httpbin.org/post")
+            .WithBody(formData)
+            .WithContentType(ContentType.FormUrlEncoded)
+            .PostAsync<string>();
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.True(response.IsSuccess);
+        Assert.Contains("application/x-www-form-urlencoded", response.RawContent);
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithContentType_FormData()
+    {
+        // Arrange
+        var formData = new Dictionary<string, object>
+        {
+            { "field", "value" },
+            { "file", System.Text.Encoding.UTF8.GetBytes("content") }
+        };
+
+        // Act
+        var response = await _nexar.Request()
+            .Url("https://httpbin.org/post")
+            .WithBody(formData)
+            .WithContentType(ContentType.FormData)
+            .PostAsync<string>();
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.True(response.IsSuccess);
+        Assert.Contains("multipart/form-data", response.RawContent);
+    }
+
+    [Fact]
+    public async Task RequestBuilder_WithContentType_Binary()
+    {
+        // Arrange
+        var binaryData = System.Text.Encoding.UTF8.GetBytes("Binary test data");
+
+        // Act
+        var response = await _nexar.Request()
+            .Url("https://httpbin.org/post")
+            .WithBody(binaryData)
+            .WithContentType(ContentType.Binary)
+            .PostAsync<string>();
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.True(response.IsSuccess);
     }
 
     public void Dispose()

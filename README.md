@@ -16,6 +16,7 @@ Console.WriteLine(response.Data.Name);
 - **Instance Creation**: `Nexar.Create()` for custom configurations
 - **Typed Responses**: `response.Data`, `response.Status`, `response.Headers`
 - **Request Configuration**: Flexible request options
+- **Multiple Content Types**: JSON, Form Data, Form URL Encoded, Binary
 - **Interceptors**: Request and response interceptors
 - **Automatic JSON**: Serialization and deserialization
 - **Retry Mechanism**: Exponential backoff support
@@ -238,6 +239,61 @@ var response = await api.Request()
 
 // Generates: /users?page=1&limit=20&sort=name
 ```
+
+### Content Types
+
+Nexar supports multiple content types for request bodies:
+
+```csharp
+// JSON (default)
+var response = await Nexar.Post<User>("/users",
+    new { Name = "John", Email = "john@example.com" });
+
+// Form URL Encoded (application/x-www-form-urlencoded)
+var formData = new Dictionary<string, string>
+{
+    { "username", "john" },
+    { "password", "secret123" }
+};
+var response = await api.PostAsync<Dictionary<string, string>, string>(
+    "/login", null, formData, ContentType.FormUrlEncoded);
+
+// Multipart Form Data (multipart/form-data) - for file uploads
+var formData = new Dictionary<string, object>
+{
+    { "title", "My Document" },
+    { "file", fileBytes }  // byte[] or Stream
+};
+var response = await api.PostAsync<Dictionary<string, object>, string>(
+    "/upload", null, formData, ContentType.FormData);
+
+// Binary (application/octet-stream)
+var binaryData = File.ReadAllBytes("image.png");
+var response = await api.PostAsync<byte[], string>(
+    "/upload-image", null, binaryData, ContentType.Binary);
+
+// Using Fluent API
+var response = await api.Request()
+    .Url("/upload")
+    .WithBody(formData)
+    .WithContentType(ContentType.FormData)
+    .PostAsync<string>();
+
+// Using RequestOptions
+var response = await Nexar.Request<string>(new RequestOptions
+{
+    Method = "POST",
+    Url = "/upload",
+    Data = formData,
+    ContentType = ContentType.FormUrlEncoded
+});
+```
+
+**Available Content Types:**
+- `ContentType.Json` - JSON format (default)
+- `ContentType.FormUrlEncoded` - Form URL encoded
+- `ContentType.FormData` - Multipart form data
+- `ContentType.Binary` - Binary/octet stream
 
 ### Retry with Exponential Backoff
 
