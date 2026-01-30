@@ -138,35 +138,35 @@ public class NexarRequestBuilder
     }
 
     /// <summary>
-    /// Sends a POST request.
+    /// Sends a POST request using the body set via WithBody().
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PostAsync<TResponse>()
+    public async Task<NexarResponse<T>> PostAsync<T>()
     {
-        return await _nexar.PostAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
+        return await _nexar.PostAsync<T>(BuildUrl(), _body, _headers, _contentType);
     }
 
     /// <summary>
-    /// Sends a POST request with a typed body.
+    /// Sends a POST request with the specified body.
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(TRequest body)
+    public async Task<NexarResponse<T>> PostAsync<T>(object body)
     {
-        return await _nexar.PostAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
+        return await _nexar.PostAsync<T>(BuildUrl(), body, _headers, _contentType);
     }
 
     /// <summary>
-    /// Sends a PUT request.
+    /// Sends a PUT request using the body set via WithBody().
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PutAsync<TResponse>()
+    public async Task<NexarResponse<T>> PutAsync<T>()
     {
-        return await _nexar.PutAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
+        return await _nexar.PutAsync<T>(BuildUrl(), _body, _headers, _contentType);
     }
 
     /// <summary>
-    /// Sends a PUT request with a typed body.
+    /// Sends a PUT request with the specified body.
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(TRequest body)
+    public async Task<NexarResponse<T>> PutAsync<T>(object body)
     {
-        return await _nexar.PutAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
+        return await _nexar.PutAsync<T>(BuildUrl(), body, _headers, _contentType);
     }
 
     /// <summary>
@@ -178,18 +178,18 @@ public class NexarRequestBuilder
     }
 
     /// <summary>
-    /// Sends a PATCH request.
+    /// Sends a PATCH request using the body set via WithBody().
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PatchAsync<TResponse>()
+    public async Task<NexarResponse<T>> PatchAsync<T>()
     {
-        return await _nexar.PatchAsync<object, TResponse>(BuildUrl(), _headers, _body, _contentType);
+        return await _nexar.PatchAsync<T>(BuildUrl(), _body, _headers, _contentType);
     }
 
     /// <summary>
-    /// Sends a PATCH request with a typed body.
+    /// Sends a PATCH request with the specified body.
     /// </summary>
-    public async Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(TRequest body)
+    public async Task<NexarResponse<T>> PatchAsync<T>(object body)
     {
-        return await _nexar.PatchAsync<TRequest, TResponse>(BuildUrl(), _headers, body, _contentType);
+        return await _nexar.PatchAsync<T>(BuildUrl(), body, _headers, _contentType);
     }
 }

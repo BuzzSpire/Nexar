@@ -115,7 +115,7 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PostAsync<object, string>("https://fakestoreapi.com/products", headers, body);
+            await _nexar.PostAsync<string>("https://fakestoreapi.com/products", body, headers);
 
         Assert.NotNull(result);
         Assert.True(result.IsSuccess);
@@ -142,7 +142,7 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PutAsync<object, string>("https://fakestoreapi.com/products/21", headers, body);
+            await _nexar.PutAsync<string>("https://fakestoreapi.com/products/21", body, headers);
 
         Assert.NotNull(result);
         Assert.True(result.IsSuccess);
@@ -188,7 +188,7 @@ public class NexarTests
         };
 
         var result =
-            await _nexar.PatchAsync<object, string>("https://fakestoreapi.com/products/21", headers, body);
+            await _nexar.PatchAsync<string>("https://fakestoreapi.com/products/21", body, headers);
 
         Assert.NotNull(result);
         Assert.True(result.IsSuccess);

@@ -13,21 +13,21 @@ public interface INexar
     Task<NexarResponse<T>> GetAsync<T>(string url, Dictionary<string, string>? headers = null);
 
     /// <summary>
-    /// Sends a POST request and returns a typed response.
+    /// Sends a POST request with an optional body and returns a typed response.
     /// </summary>
-    Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(
+    Task<NexarResponse<T>> PostAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json);
 
     /// <summary>
-    /// Sends a PUT request and returns a typed response.
+    /// Sends a PUT request with an optional body and returns a typed response.
     /// </summary>
-    Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(
+    Task<NexarResponse<T>> PutAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json);
 
     /// <summary>
@@ -36,12 +36,12 @@ public interface INexar
     Task<NexarResponse<T>> DeleteAsync<T>(string url, Dictionary<string, string>? headers = null);
 
     /// <summary>
-    /// Sends a PATCH request and returns a typed response.
+    /// Sends a PATCH request with an optional body and returns a typed response.
     /// </summary>
-    Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(
+    Task<NexarResponse<T>> PatchAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json);
 
     /// <summary>
