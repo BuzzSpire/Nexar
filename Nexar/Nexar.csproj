@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>2026.2901.0</Version>
+    <Version>2026.3001.1</Version>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Title>Nexar - Modern HTTP Client for .NET</Title>
     <Description>A powerful and intuitive HTTP client library for .NET. Write HTTP requests with a clean, modern API featuring static methods, typed responses, interceptors, retry mechanism, and fluent request builder. Similar to popular HTTP libraries but designed specifically for .NET developers.</Description>
@@ -14,7 +14,7 @@
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
     <PackageTags>http;httpclient;rest;api;requests;async;fluent;interceptor;retry;dotnet;csharp;net9</PackageTags>
-    <PackageReleaseNotes>Release 2026.2901.0: documentation and samples refresh for current API usage.</PackageReleaseNotes>
+    <PackageReleaseNotes>Release 2026.3001.1: Fix generic structure for POST/PUT/PATCH - single generic T instead of dual TRequest/TResponse. Improved parameter ordering (url, body, headers, contentType).</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageId>BuzzSpire.Nexar</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>

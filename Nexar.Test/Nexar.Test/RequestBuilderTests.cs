@@ -92,7 +92,7 @@ public class RequestBuilderTests : IDisposable
         // Act
         var response = await _nexar.Request()
             .Url("/posts")
-            .PostAsync<object, Post>(newPost);
+            .PostAsync<Post>(newPost);
 
         // Assert
         Assert.NotNull(response);
@@ -115,7 +115,7 @@ public class RequestBuilderTests : IDisposable
         // Act
         var response = await _nexar.Request()
             .Url("/posts/1")
-            .PutAsync<object, Post>(updatedPost);
+            .PutAsync<Post>(updatedPost);
 
         // Assert
         Assert.NotNull(response);

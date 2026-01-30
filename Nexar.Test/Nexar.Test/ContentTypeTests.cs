@@ -26,10 +26,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PostAsync<Dictionary<string, string>, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             formData,
+            null,
             ContentType.FormUrlEncoded);
 
         // Assert
@@ -50,10 +50,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PostAsync<Dictionary<string, object>, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             formData,
+            null,
             ContentType.FormData);
 
         // Assert
@@ -69,10 +69,10 @@ public class ContentTypeTests
         var binaryData = Encoding.UTF8.GetBytes("Binary content data for testing");
 
         // Act
-        var response = await _nexar.PostAsync<byte[], string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             binaryData,
+            null,
             ContentType.Binary);
 
         // Assert
@@ -93,10 +93,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PostAsync<object, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             jsonData,
+            null,
             ContentType.Json);
 
         // Assert
@@ -116,10 +116,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PutAsync<Dictionary<string, string>, string>(
+        var response = await _nexar.PutAsync<string>(
             "https://httpbin.org/put",
-            null,
             formData,
+            null,
             ContentType.FormUrlEncoded);
 
         // Assert
@@ -139,10 +139,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PatchAsync<Dictionary<string, object>, string>(
+        var response = await _nexar.PatchAsync<string>(
             "https://httpbin.org/patch",
-            null,
             formData,
+            null,
             ContentType.FormData);
 
         // Assert
@@ -235,10 +235,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PostAsync<Dictionary<string, string>, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             formData,
+            null,
             ContentType.FormUrlEncoded);
 
         // Assert
@@ -253,10 +253,10 @@ public class ContentTypeTests
         var formData = new Dictionary<string, string>();
 
         // Act
-        var response = await _nexar.PostAsync<Dictionary<string, string>, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             formData,
+            null,
             ContentType.FormUrlEncoded);
 
         // Assert
@@ -271,10 +271,10 @@ public class ContentTypeTests
         var streamData = new MemoryStream(Encoding.UTF8.GetBytes("Stream test content"));
 
         // Act
-        var response = await _nexar.PostAsync<Stream, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             streamData,
+            null,
             ContentType.Binary);
 
         // Assert
@@ -294,10 +294,10 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await _nexar.PostAsync<Dictionary<string, object>, string>(
+        var response = await _nexar.PostAsync<string>(
             "https://httpbin.org/post",
-            null,
             formData,
+            null,
             ContentType.FormData);
 
         // Assert

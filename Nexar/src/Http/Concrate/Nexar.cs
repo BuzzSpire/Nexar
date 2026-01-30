@@ -96,7 +96,7 @@ public class Nexar : INexar, IDisposable
     /// </summary>
     public static Task<NexarResponse<T>> Post<T>(string url, object? data = null, RequestOptions? options = null)
     {
-        return DefaultInstance.PostAsync<object, T>(url, options?.Headers, data);
+        return DefaultInstance.PostAsync<T>(url, data, options?.Headers);
     }
 
     /// <summary>
@@ -104,7 +104,7 @@ public class Nexar : INexar, IDisposable
     /// </summary>
     public static Task<NexarResponse<T>> Put<T>(string url, object? data = null, RequestOptions? options = null)
     {
-        return DefaultInstance.PutAsync<object, T>(url, options?.Headers, data);
+        return DefaultInstance.PutAsync<T>(url, data, options?.Headers);
     }
 
     /// <summary>
@@ -120,7 +120,7 @@ public class Nexar : INexar, IDisposable
     /// </summary>
     public static Task<NexarResponse<T>> Patch<T>(string url, object? data = null, RequestOptions? options = null)
     {
-        return DefaultInstance.PatchAsync<object, T>(url, options?.Headers, data);
+        return DefaultInstance.PatchAsync<T>(url, data, options?.Headers);
     }
 
     /// <summary>
@@ -144,10 +144,10 @@ public class Nexar : INexar, IDisposable
         return method switch
         {
             "GET" => await instance.GetAsync<T>(url, options.Headers),
-            "POST" => await instance.PostAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
-            "PUT" => await instance.PutAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
+            "POST" => await instance.PostAsync<T>(url, options.Data, options.Headers, options.ContentType),
+            "PUT" => await instance.PutAsync<T>(url, options.Data, options.Headers, options.ContentType),
             "DELETE" => await instance.DeleteAsync<T>(url, options.Headers),
-            "PATCH" => await instance.PatchAsync<object, T>(url, options.Headers, options.Data, options.ContentType),
+            "PATCH" => await instance.PatchAsync<T>(url, options.Data, options.Headers, options.ContentType),
             "HEAD" => await instance.HeadAsync<T>(url, options.Headers),
             _ => throw new NotSupportedException($"HTTP method {method} is not supported")
         };
@@ -158,22 +158,22 @@ public class Nexar : INexar, IDisposable
         return await SendRequestAsync<T>(HttpMethod.Get, url, headers, null);
     }
 
-    public async Task<NexarResponse<TResponse>> PostAsync<TRequest, TResponse>(
+    public async Task<NexarResponse<T>> PostAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json)
     {
-        return await SendRequestAsync<TResponse>(HttpMethod.Post, url, headers, body, contentType);
+        return await SendRequestAsync<T>(HttpMethod.Post, url, headers, body, contentType);
     }
 
-    public async Task<NexarResponse<TResponse>> PutAsync<TRequest, TResponse>(
+    public async Task<NexarResponse<T>> PutAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json)
     {
-        return await SendRequestAsync<TResponse>(HttpMethod.Put, url, headers, body, contentType);
+        return await SendRequestAsync<T>(HttpMethod.Put, url, headers, body, contentType);
     }
 
     public async Task<NexarResponse<T>> DeleteAsync<T>(string url, Dictionary<string, string>? headers = null)
@@ -181,13 +181,13 @@ public class Nexar : INexar, IDisposable
         return await SendRequestAsync<T>(HttpMethod.Delete, url, headers, null);
     }
 
-    public async Task<NexarResponse<TResponse>> PatchAsync<TRequest, TResponse>(
+    public async Task<NexarResponse<T>> PatchAsync<T>(
         string url,
+        object? body = null,
         Dictionary<string, string>? headers = null,
-        TRequest? body = default,
         ContentType contentType = ContentType.Json)
     {
-        return await SendRequestAsync<TResponse>(new HttpMethod("PATCH"), url, headers, body, contentType);
+        return await SendRequestAsync<T>(new HttpMethod("PATCH"), url, headers, body, contentType);
     }
 
     public async Task<NexarResponse<T>> HeadAsync<T>(string url, Dictionary<string, string>? headers = null)
