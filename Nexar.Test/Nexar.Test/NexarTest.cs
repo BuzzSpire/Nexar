@@ -25,7 +25,7 @@ public class NexarTests
     /// <summary>
     /// Instance of the Nexar class that is being tested.
     /// </summary>
-    private readonly Nexar.Nexar _nexar;
+    private readonly Nexar.src.Http.Concrete.Nexar _nexar;
 
     /// <summary>
     /// Constructor for the NexarTests class.

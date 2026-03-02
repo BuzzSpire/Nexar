@@ -7,7 +7,7 @@ using Xunit;
 /// </summary>
 public class ContentTypeTests
 {
-    private readonly Nexar.Nexar _nexar;
+    private readonly Nexar.src.Http.Concrete.Nexar _nexar;
 
     public ContentTypeTests()
     {
@@ -168,7 +168,7 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await Nexar.Nexar.Request<string>(options);
+        var response = await Nexar.src.Http.Concrete.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(response);
@@ -193,7 +193,7 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await Nexar.Nexar.Request<string>(options);
+        var response = await Nexar.src.Http.Concrete.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(response);
@@ -215,7 +215,7 @@ public class ContentTypeTests
         };
 
         // Act
-        var response = await Nexar.Nexar.Request<string>(options);
+        var response = await Nexar.src.Http.Concrete.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(response);

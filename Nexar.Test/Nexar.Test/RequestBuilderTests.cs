@@ -8,7 +8,7 @@ namespace Nexar.Test;
 /// </summary>
 public class RequestBuilderTests : IDisposable
 {
-    private readonly global::Nexar.Nexar _nexar;
+    private readonly global::Nexar.src.Http.Concrete.Nexar _nexar;
 
     public RequestBuilderTests()
     {
