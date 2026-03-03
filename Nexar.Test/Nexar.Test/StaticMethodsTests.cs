@@ -25,7 +25,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await Nexar.Get<string>(url);
+        var result = await NexarLib.Nexar.Get<string>(url);
 
         // Assert
         Assert.NotNull(result);
