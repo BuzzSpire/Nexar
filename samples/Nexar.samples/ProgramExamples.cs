@@ -9,7 +9,7 @@ partial class Program
         Console.WriteLine("6. Query Parameters:");
 
         // Using fluent API with query parameters
-        var api = Nexar.src.Http.Concrete.Nexar.Create();
+        var api = Nexar.Nexar.Create();
         var response = await api.Request()
             .Url("https://freetestapi.com/api/v1/destinations")
             .WithQuery("limit", "3")
@@ -24,7 +24,7 @@ partial class Program
     {
         Console.WriteLine("7. Request/Response Interceptors:");
 
-        var api = Nexar.src.Http.Concrete.Nexar.Create();
+        var api = Nexar.Nexar.Create();
         api.Interceptors.Add(new LoggingInterceptor());
 
         var response = await api.GetAsync<Destination>("https://freetestapi.com/api/v1/destinations/1");
@@ -36,7 +36,7 @@ partial class Program
     {
         Console.WriteLine("8. Raw string response:");
 
-        var response = await Nexar.src.Http.Concrete.Nexar.Get<string>("https://freetestapi.com/api/v1/destinations/1");
+        var response = await Nexar.Nexar.Get<string>("https://freetestapi.com/api/v1/destinations/1");
         var raw = response.Data ?? response.RawContent;
 
         Console.WriteLine($"   Raw response: {raw.Substring(0, Math.Min(50, raw.Length))}...\n");

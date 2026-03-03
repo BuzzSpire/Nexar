@@ -25,7 +25,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Get<string>(url);
+        var result = await Nexar.Get<string>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -44,7 +44,7 @@ public class StaticMethodsTests : IDisposable
             var url = "https://jsonplaceholder.typicode.com/posts/1";
 
             // Act
-            var result = await src.Http.Concrete.Nexar.Get<Post>(url);
+            var result = await Nexar.Get<Post>(url);
 
             // Assert - verify we get a response
             Assert.NotNull(result);
@@ -77,7 +77,7 @@ public class StaticMethodsTests : IDisposable
         var postData = new { title = "Test", body = "Test body", userId = 1 };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Post<string>(url, postData);
+        var result = await Nexar.Post<string>(url, postData);
 
         // Assert
         Assert.NotNull(result);
@@ -93,7 +93,7 @@ public class StaticMethodsTests : IDisposable
         var postData = new { title = "Test Post", body = "Test body", userId = 1 };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Post<Post>(url, postData);
+        var result = await Nexar.Post<Post>(url, postData);
 
         // Assert
         Assert.NotNull(result);
@@ -110,7 +110,7 @@ public class StaticMethodsTests : IDisposable
         var putData = new { id = 1, title = "Updated", body = "Updated body", userId = 1 };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Put<string>(url, putData);
+        var result = await Nexar.Put<string>(url, putData);
 
         // Assert
         Assert.NotNull(result);
@@ -126,7 +126,7 @@ public class StaticMethodsTests : IDisposable
         var putData = new { id = 1, title = "Updated Post", body = "Updated body", userId = 1 };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Put<Post>(url, putData);
+        var result = await Nexar.Put<Post>(url, putData);
 
         // Assert
         Assert.NotNull(result);
@@ -142,7 +142,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Delete<string>(url);
+        var result = await Nexar.Delete<string>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -156,7 +156,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Delete<object>(url);
+        var result = await Nexar.Delete<object>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -172,7 +172,7 @@ public class StaticMethodsTests : IDisposable
         var patchData = new { title = "Patched Title" };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Patch<string>(url, patchData);
+        var result = await Nexar.Patch<string>(url, patchData);
 
         // Assert
         Assert.NotNull(result);
@@ -188,7 +188,7 @@ public class StaticMethodsTests : IDisposable
         var patchData = new { title = "Patched Post" };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Patch<Post>(url, patchData);
+        var result = await Nexar.Patch<Post>(url, patchData);
 
         // Assert
         Assert.NotNull(result);
@@ -211,7 +211,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Get<Post>(url, options);
+        var result = await Nexar.Get<Post>(url, options);
 
         // Assert
         Assert.NotNull(result);
@@ -226,7 +226,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Head<string>(url);
+        var result = await Nexar.Head<string>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -245,7 +245,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -266,7 +266,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -286,7 +286,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -305,7 +305,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -325,7 +325,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -344,7 +344,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await src.Http.Concrete.Nexar.Request<string>(options);
+        var result = await Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -365,7 +365,7 @@ public class StaticMethodsTests : IDisposable
         // Act & Assert
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
         {
-            await src.Http.Concrete.Nexar.Request<string>(options);
+            await Nexar.Request<string>(options);
         });
     }
 
@@ -381,7 +381,7 @@ public class StaticMethodsTests : IDisposable
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
-            await src.Http.Concrete.Nexar.Request<string>(options);
+            await Nexar.Request<string>(options);
         });
     }
 

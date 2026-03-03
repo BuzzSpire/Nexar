@@ -42,7 +42,7 @@ partial class Program
     {
         Console.WriteLine("1. Static Method:");
 
-        var response = await Nexar.src.Http.Concrete.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
+        var response = await Nexar.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
 
         if (response.IsSuccess && response.Data != null)
         {
@@ -59,7 +59,7 @@ partial class Program
     {
         Console.WriteLine("2. Nexar.Create() - Instance with config:");
 
-        var api = Nexar.src.Http.Concrete.Nexar.Create(new NexarConfig
+        var api = Nexar.Nexar.Create(new NexarConfig
         {
             BaseUrl = "https://freetestapi.com",
             DefaultHeaders = new Dictionary<string, string>
@@ -81,7 +81,7 @@ partial class Program
     {
         Console.WriteLine("3. Request Config:");
 
-        var response = await Nexar.src.Http.Concrete.Nexar.Request<Destination>(new RequestOptions
+        var response = await Nexar.Nexar.Request<Destination>(new RequestOptions
         {
             Method = "GET",
             Url = "https://freetestapi.com/api/v1/destinations/1",
@@ -100,7 +100,7 @@ partial class Program
     {
         Console.WriteLine("4. Response Structure (response.data, response.status):");
 
-        var response = await Nexar.src.Http.Concrete.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
+        var response = await Nexar.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
 
         // Access response properties
         Console.WriteLine($"   response.status: {response.Status}");
@@ -121,7 +121,7 @@ partial class Program
             description = "City of Light"
         };
 
-        var response = await Nexar.src.Http.Concrete.Nexar.Post<object>(
+        var response = await Nexar.Nexar.Post<object>(
             "https://freetestapi.com/api/v1/destinations",
             newDestination
         );
