@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Nexar.Models;
+using NexarLib = global::Nexar;
 
 namespace Nexar.Test;
 
@@ -43,7 +44,7 @@ public class StaticMethodsTests : IDisposable
             var url = "https://jsonplaceholder.typicode.com/posts/1";
 
             // Act
-            var result = await Nexar.Nexar.Get<Post>(url);
+            var result = await NexarLib.Nexar.Get<Post>(url);
 
             // Assert - verify we get a response
             Assert.NotNull(result);
@@ -76,7 +77,7 @@ public class StaticMethodsTests : IDisposable
         var postData = new { title = "Test", body = "Test body", userId = 1 };
 
         // Act
-        var result = await Nexar.Nexar.Post<string>(url, postData);
+        var result = await NexarLib.Nexar.Post<string>(url, postData);
 
         // Assert
         Assert.NotNull(result);
@@ -92,7 +93,7 @@ public class StaticMethodsTests : IDisposable
         var postData = new { title = "Test Post", body = "Test body", userId = 1 };
 
         // Act
-        var result = await Nexar.Nexar.Post<Post>(url, postData);
+        var result = await NexarLib.Nexar.Post<Post>(url, postData);
 
         // Assert
         Assert.NotNull(result);
@@ -109,7 +110,7 @@ public class StaticMethodsTests : IDisposable
         var putData = new { id = 1, title = "Updated", body = "Updated body", userId = 1 };
 
         // Act
-        var result = await Nexar.Nexar.Put<string>(url, putData);
+        var result = await NexarLib.Nexar.Put<string>(url, putData);
 
         // Assert
         Assert.NotNull(result);
@@ -125,7 +126,7 @@ public class StaticMethodsTests : IDisposable
         var putData = new { id = 1, title = "Updated Post", body = "Updated body", userId = 1 };
 
         // Act
-        var result = await Nexar.Nexar.Put<Post>(url, putData);
+        var result = await NexarLib.Nexar.Put<Post>(url, putData);
 
         // Assert
         Assert.NotNull(result);
@@ -141,7 +142,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await Nexar.Nexar.Delete<string>(url);
+        var result = await NexarLib.Nexar.Delete<string>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -155,7 +156,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await Nexar.Nexar.Delete<object>(url);
+        var result = await NexarLib.Nexar.Delete<object>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -171,7 +172,7 @@ public class StaticMethodsTests : IDisposable
         var patchData = new { title = "Patched Title" };
 
         // Act
-        var result = await Nexar.Nexar.Patch<string>(url, patchData);
+        var result = await NexarLib.Nexar.Patch<string>(url, patchData);
 
         // Assert
         Assert.NotNull(result);
@@ -187,7 +188,7 @@ public class StaticMethodsTests : IDisposable
         var patchData = new { title = "Patched Post" };
 
         // Act
-        var result = await Nexar.Nexar.Patch<Post>(url, patchData);
+        var result = await NexarLib.Nexar.Patch<Post>(url, patchData);
 
         // Assert
         Assert.NotNull(result);
@@ -210,7 +211,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Get<Post>(url, options);
+        var result = await NexarLib.Nexar.Get<Post>(url, options);
 
         // Assert
         Assert.NotNull(result);
@@ -225,7 +226,7 @@ public class StaticMethodsTests : IDisposable
         var url = "https://jsonplaceholder.typicode.com/posts/1";
 
         // Act
-        var result = await Nexar.Nexar.Head<string>(url);
+        var result = await NexarLib.Nexar.Head<string>(url);
 
         // Assert
         Assert.NotNull(result);
@@ -244,7 +245,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -265,7 +266,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -285,7 +286,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -304,7 +305,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -324,7 +325,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -343,7 +344,7 @@ public class StaticMethodsTests : IDisposable
         };
 
         // Act
-        var result = await Nexar.Nexar.Request<string>(options);
+        var result = await NexarLib.Nexar.Request<string>(options);
 
         // Assert
         Assert.NotNull(result);
@@ -364,7 +365,7 @@ public class StaticMethodsTests : IDisposable
         // Act & Assert
         await Assert.ThrowsAsync<NotSupportedException>(async () =>
         {
-            await Nexar.Nexar.Request<string>(options);
+            await NexarLib.Nexar.Request<string>(options);
         });
     }
 
@@ -380,7 +381,7 @@ public class StaticMethodsTests : IDisposable
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
         {
-            await Nexar.Nexar.Request<string>(options);
+            await NexarLib.Nexar.Request<string>(options);
         });
     }
 
