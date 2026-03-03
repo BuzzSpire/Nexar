@@ -1,5 +1,4 @@
-﻿using Nexar;
-using Nexar.Configuration;
+﻿using Nexar.Configuration;
 using Nexar.Interceptors;
 using Nexar.Models;
 
