@@ -200,7 +200,7 @@ public class Nexar : INexar, IDisposable
         switch (contentType)
         {
             case ContentType.Json:
-                var json = JsonSerializer.Serialize(body);
+                var json = JsonSerializer.Serialize(body, _config.JsonOptions);
                 return new StringContent(json, Encoding.UTF8, "application/json");
 
             case ContentType.FormUrlEncoded:
@@ -262,7 +262,7 @@ public class Nexar : INexar, IDisposable
         else
         {
             var json = JsonSerializer.Serialize(body);
-            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json, _config.JsonOptions);
             return dict ?? new Dictionary<string, object>();
         }
     }
@@ -280,7 +280,7 @@ public class Nexar : INexar, IDisposable
         else
         {
             var json = JsonSerializer.Serialize(body);
-            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json, _config.JsonOptions);
             return dict ?? new Dictionary<string, string>();
         }
     }
@@ -341,7 +341,7 @@ public class Nexar : INexar, IDisposable
                         }
                         else
                         {
-                            nexarResponse.Data = JsonSerializer.Deserialize<T>(rawContent);
+                            nexarResponse.Data = JsonSerializer.Deserialize<T>(rawContent, _config.JsonOptions);
                         }
                     }
                     catch (JsonException)
