@@ -261,7 +261,7 @@ public class Nexar : INexar, IDisposable
         }
         else
         {
-            var json = JsonSerializer.Serialize(body);
+            var json = JsonSerializer.Serialize(body, _config.JsonOptions);
             var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(json, _config.JsonOptions);
             return dict ?? new Dictionary<string, object>();
         }
@@ -279,7 +279,7 @@ public class Nexar : INexar, IDisposable
         }
         else
         {
-            var json = JsonSerializer.Serialize(body);
+            var json = JsonSerializer.Serialize(body, _config.JsonOptions);
             var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json, _config.JsonOptions);
             return dict ?? new Dictionary<string, string>();
         }

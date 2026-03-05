@@ -43,7 +43,7 @@ public class NexarConfig
     public bool ValidateSslCertificates { get; set; } = true;
 
     /// <summary>
-    ///  JsonSerializerOptions that can be used to configure JsonOptions on a JsonSerializer.
+    /// JsonSerializerOptions that can be used to configure JsonOptions on a JsonSerializer.
     /// </summary>
     public JsonSerializerOptions JsonOptions { get; set; } = new JsonSerializerOptions();
 }
