@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Nexar.Configuration;
 
 /// <summary>
@@ -39,4 +41,9 @@ public class NexarConfig
     /// Validate SSL certificates. Default is true.
     /// </summary>
     public bool ValidateSslCertificates { get; set; } = true;
+
+    /// <summary>
+    /// JsonSerializerOptions that can be used to configure JsonOptions on a JsonSerializer.
+    /// </summary>
+    public JsonSerializerOptions JsonOptions { get; set; } = new JsonSerializerOptions();
 }
