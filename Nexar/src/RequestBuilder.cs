@@ -376,6 +376,96 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Sends the file at <paramref name="path"/> as the body. The content type comes from the file extension
+    /// unless given. The file is reopened for every attempt, so the request can be retried.
+    /// </summary>
+    public RequestBuilder File(string path, string? contentType = null)
+    {
+        Capture(() =>
+        {
+            if (!System.IO.File.Exists(path))
+            {
+                throw new ArgumentException($"File '{path}' does not exist.", nameof(path));
+            }
+            var type = contentType ?? MimeTypes.FromPath(path);
+            MediaTypeHeaderValue.Parse(type);
+            SetContent(() =>
+            {
+                var stream = System.IO.File.OpenRead(path);
+                var content = new StreamContent(stream);
+                content.Headers.ContentType = MediaTypeHeaderValue.Parse(type);
+                content.Headers.ContentLength = stream.Length;
+                return content;
+            }, isReplayable: true);
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Downloads the response body to <paramref name="path"/> and returns its size in bytes.
+    /// The body goes to <c>{path}.partial</c> first and is moved into place only when complete,
+    /// so a failed download never leaves a truncated file at <paramref name="path"/>.
+    /// </summary>
+    /// <param name="path">The destination file. It is replaced if it exists.</param>
+    /// <param name="resume">
+    /// Keep <c>{path}.partial</c> after a failure and continue from its end next time with a <c>Range</c> request.
+    /// If the server ignores the range, the download restarts from zero. Add <see cref="IfRange(string)"/>
+    /// to restart automatically when the resource changed.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the download.</param>
+    /// <exception cref="NexarException">The status is 4xx/5xx, or the server returned a range that does not continue the file.</exception>
+    public async Task<long> DownloadTo(string path, bool resume = false, CancellationToken cancellationToken = default)
+    {
+        var partial = path + ".partial";
+        var existing = resume && System.IO.File.Exists(partial) ? new FileInfo(partial).Length : 0;
+        if (existing > 0)
+        {
+            Range(existing);
+        }
+
+        try
+        {
+            using var response = await Send(cancellationToken).ConfigureAwait(false);
+            await response.ErrorForStatus(cancellationToken).ConfigureAwait(false);
+
+            var append = false;
+            if (existing > 0 && response.IsPartialContent)
+            {
+                if (response.ContentRange?.From != existing)
+                {
+                    throw new NexarException(ErrorKind.Body,
+                        $"Cannot resume {path}: asked for bytes from {existing}, got '{response.ContentRange}'.", response.Url);
+                }
+                append = true;
+            }
+
+            await response.CopyToFileAsync(partial, append, cancellationToken).ConfigureAwait(false);
+        }
+        catch when (!resume)
+        {
+            TryDelete(partial);
+            throw;
+        }
+
+        System.IO.File.Move(partial, path, overwrite: true);
+        return new FileInfo(path).Length;
+    }
+
+    internal static void TryDelete(string path)
+    {
+        try
+        {
+            System.IO.File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
     /// Overrides the client's timeout for this request.
     /// </summary>
     public RequestBuilder Timeout(TimeSpan timeout)

@@ -68,6 +68,15 @@ public static class ResponseTaskExtensions
     }
 
     /// <summary>
+    /// Awaits the response, saves its body to <paramref name="path"/> (atomically) and disposes it.
+    /// </summary>
+    public static async Task SaveTo(this Task<NexarResponse> response, string path, CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        await result.SaveTo(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Awaits the response, deserializes its body as JSON and disposes it.
     /// </summary>
     public static async Task<T> Json<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default)

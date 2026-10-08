@@ -50,6 +50,25 @@ public sealed class MultipartForm
         return this;
     }
 
+    /// <summary>
+    /// Adds the file at <paramref name="path"/>, named after the file, with a content type from its extension
+    /// unless given. The file is reopened for every attempt, so the request can be retried.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">The file does not exist.</exception>
+    /// <exception cref="FormatException"><paramref name="contentType"/> is not a valid media type.</exception>
+    public MultipartForm File(string name, string path, string? contentType = null)
+    {
+        if (!System.IO.File.Exists(path))
+        {
+            throw new FileNotFoundException($"File '{path}' does not exist.", path);
+        }
+        var type = contentType ?? MimeTypes.FromPath(path);
+        Validate(type);
+        var fileName = System.IO.Path.GetFileName(path);
+        _parts.Add(content => content.Add(WithContentType(new StreamContent(System.IO.File.OpenRead(path)), type), name, fileName));
+        return this;
+    }
+
     internal HttpContent Build()
     {
         var content = new MultipartFormDataContent();

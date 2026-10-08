@@ -101,7 +101,7 @@ public sealed class NexarClient : IDisposable
         while (true)
         {
             var canRetry = attempt < maxRetries;
-            using var message = request.CreateMessage();
+            using var message = CreateMessage(request);
             if (authenticator != null)
             {
                 await AuthenticateAsync(authenticator, message, request.Url, cancellationToken).ConfigureAwait(false);
@@ -175,6 +175,19 @@ public sealed class NexarClient : IDisposable
             }
 
             return new NexarResponse(response, request.Url, JsonOptions, deadline);
+        }
+    }
+
+    private static HttpRequestMessage CreateMessage(PreparedRequest request)
+    {
+        try
+        {
+            return request.CreateMessage();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // e.g. a File() body that was deleted after the request was built
+            throw new NexarException(ErrorKind.Builder, $"Could not create the request body: {ex.Message}", request.Url, innerException: ex);
         }
     }
 

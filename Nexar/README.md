@@ -74,7 +74,7 @@ var response = await client.Post("/orders")
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
-| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `Body(string \| byte[] \| Stream, contentType)` |
+| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| Stream, contentType)`, `Body(string, Encoding, mediaType)` |
 | Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(Version)` |
 
 ### Bodies
@@ -94,6 +94,22 @@ await client.Put("/files/report.csv").Body(File.OpenRead("report.csv"), "text/cs
 
 await client.Post("/legacy").Body(xml, Encoding.GetEncoding("iso-8859-9"), "application/xml").Send();  // charset is set for you
 ```
+
+### Files
+
+```csharp
+// Upload: the content type comes from the extension, and the file is reopened on retries.
+await client.Put("/files/report.pdf").File("report.pdf").Send();
+await client.Post("/upload").Multipart(new MultipartForm().File("doc", "report.pdf")).Send();
+
+// Download: written to a temporary file and moved into place only when complete.
+await client.Get("/files/report.pdf").Send().ErrorForStatus().SaveTo("report.pdf");
+
+// Resumable download: after a failure, the next call continues from where it stopped.
+long size = await client.Get("/big.iso").IfRange(etag).DownloadTo("big.iso", resume: true);
+```
+
+`DownloadTo` keeps the unfinished data in `{path}.partial` and asks for the rest with a `Range` request. If the server answers with the whole resource instead (no range support, or `If-Range` no longer matches), it starts over. If it answers with a range that does not continue the file, you get `ErrorKind.Body`.
 
 ## Authentication
 

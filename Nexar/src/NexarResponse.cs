@@ -215,6 +215,39 @@ public sealed class NexarResponse : IDisposable
     }
 
     /// <summary>
+    /// Saves the body to <paramref name="path"/>, replacing it if it exists. The body is written to a temporary
+    /// file first and moved into place only when complete, so a failed download leaves no truncated file.
+    /// </summary>
+    public async Task SaveTo(string path, CancellationToken cancellationToken = default)
+    {
+        var temporary = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await CopyToFileAsync(temporary, append: false, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch
+        {
+            RequestBuilder.TryDelete(temporary);
+            throw;
+        }
+    }
+
+    internal async Task CopyToFileAsync(string path, bool append, CancellationToken cancellationToken)
+    {
+        await using var file = new FileStream(path, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+        await using var body = await Stream(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await body.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpIOException ex)
+        {
+            throw new NexarException(ErrorKind.Body, $"Failed to read the response body: {ex.Message}", Url, innerException: ex);
+        }
+    }
+
+    /// <summary>
     /// Deserializes the body as JSON using the client's JSON options.
     /// </summary>
     /// <exception cref="NexarException">The body is empty, <c>null</c>, or not valid JSON for <typeparamref name="T"/>.</exception>
