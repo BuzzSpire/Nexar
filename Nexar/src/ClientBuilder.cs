@@ -720,7 +720,15 @@ public sealed class ClientBuilder
         }
 
         var jsonOptions = new JsonSerializerOptions(_jsonOptions);
-        jsonOptions.MakeReadOnly(populateMissingResolver: true);
+        // Reflection is only wired in when the app allows it; trimmed/AOT apps pass JsonTypeInfo instead.
+        if (jsonOptions.TypeInfoResolver is null && JsonSerializer.IsReflectionEnabledByDefault)
+        {
+            jsonOptions.TypeInfoResolver = CreateReflectionResolver();
+        }
+        if (jsonOptions.TypeInfoResolver is not null)
+        {
+            jsonOptions.MakeReadOnly();
+        }
 
         var ownsHttpClient = _httpClient == null;
         var httpClient = _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
@@ -779,6 +787,13 @@ public sealed class ClientBuilder
         }
         return handler;
     }
+
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Only called when JsonSerializer.IsReflectionEnabledByDefault is true, a feature switch trimmed apps turn off.")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "Only called when JsonSerializer.IsReflectionEnabledByDefault is true, a feature switch Native AOT apps turn off.")]
+    private static System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver CreateReflectionResolver() =>
+        new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver();
 
     internal static TimeSpan ValidateTimeout(TimeSpan timeout)
     {

@@ -333,6 +333,24 @@ await client.Post("/payments")
     .Send();
 ```
 
+## Native AOT and trimming
+
+Nexar is `IsAotCompatible`. Members that use reflection-based JSON are annotated, so trimmed and Native AOT apps get a warning when they use them. Each one has a source-generated counterpart:
+
+```csharp
+[JsonSerializable(typeof(User))]
+partial class AppJsonContext : JsonSerializerContext;
+
+var user = await client.Post("/users")
+    .Json(newUser, AppJsonContext.Default.User)                         // instead of .Json(newUser)
+    .Send()
+    .Json(AppJsonContext.Default.User);                                 // instead of .Json<User>()
+
+client.Post("/login").Form(new Dictionary<string, string> { ... });    // key/value pairs instead of an object
+```
+
+The same applies to `JsonLines`, `JsonStream`, `Paginate`, `NexarException.Json` and `NexarProblemDetails.Extension`. `samples/Nexar.AotSmoke` publishes a native binary with warnings as errors and checks these paths.
+
 ## Observability
 
 Nexar publishes an `ActivitySource` and a `Meter`, both named `Nexar`, following the OpenTelemetry HTTP client semantic conventions:

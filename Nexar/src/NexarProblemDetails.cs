@@ -1,4 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -35,7 +37,21 @@ public sealed class NexarProblemDetails
     /// Deserializes an extension member, e.g. <c>problem.Extension&lt;Dictionary&lt;string, string[]&gt;&gt;("errors")</c>.
     /// Returns <c>default</c> if it is missing or has a different shape.
     /// </summary>
-    public T? Extension<T>(string name, JsonSerializerOptions? options = null)
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public T? Extension<T>(string name, JsonSerializerOptions? options = null) =>
+        ExtensionCore(name, element => element.Deserialize<T>(options));
+
+    /// <summary>
+    /// Deserializes an extension member with source-generated metadata. Safe for trimming and Native AOT.
+    /// </summary>
+    public T? Extension<T>(string name, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return ExtensionCore(name, element => element.Deserialize(typeInfo));
+    }
+
+    private T? ExtensionCore<T>(string name, Func<JsonElement, T?> deserialize)
     {
         if (!Extensions.TryGetValue(name, out var element))
         {
@@ -43,7 +59,7 @@ public sealed class NexarProblemDetails
         }
         try
         {
-            return element.Deserialize<T>(options);
+            return deserialize(element);
         }
         catch (JsonException)
         {

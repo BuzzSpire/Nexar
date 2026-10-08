@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -23,6 +25,8 @@ internal static class ValueEncoder
     /// Flattens a dictionary or object into key/value pairs. Objects go through the client's JSON options,
     /// so naming policies apply; arrays and nested objects follow <paramref name="style"/>.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Object)]
+    [RequiresDynamicCode(AotMessages.Object)]
     public static List<KeyValuePair<string, string>> ToPairs(object values, JsonSerializerOptions options, QueryStyle style)
     {
         ArgumentNullException.ThrowIfNull(values);

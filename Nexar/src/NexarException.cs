@@ -1,5 +1,7 @@
 using System.Net;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -93,7 +95,21 @@ public sealed class NexarException : Exception
     /// Deserializes <see cref="ResponseBody"/> with the client's JSON options,
     /// e.g. <c>e.Json&lt;ProblemDetails&gt;()</c>. Returns <c>default</c> if there is no body or it is not valid JSON.
     /// </summary>
-    public T? Json<T>()
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public T? Json<T>() => JsonCore(body => JsonSerializer.Deserialize<T>(body, JsonOptions));
+
+    /// <summary>
+    /// Deserializes <see cref="ResponseBody"/> with source-generated metadata. Safe for trimming and Native AOT.
+    /// Returns <c>default</c> if there is no body or it is not valid JSON.
+    /// </summary>
+    public T? Json<T>(JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonCore(body => JsonSerializer.Deserialize(body, typeInfo));
+    }
+
+    private T? JsonCore<T>(Func<string, T?> deserialize)
     {
         if (string.IsNullOrEmpty(ResponseBody) || IsResponseBodyTruncated)
         {
@@ -102,7 +118,7 @@ public sealed class NexarException : Exception
 
         try
         {
-            return JsonSerializer.Deserialize<T>(ResponseBody, JsonOptions);
+            return deserialize(ResponseBody);
         }
         catch (JsonException)
         {

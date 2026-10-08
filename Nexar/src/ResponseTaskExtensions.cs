@@ -1,3 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Serialization.Metadata;
+
 namespace Nexar;
 
 /// <summary>
@@ -98,35 +101,59 @@ public static class ResponseTaskExtensions
     /// <summary>
     /// Awaits the response and reads it as newline-delimited JSON. The response is disposed when the enumeration ends.
     /// </summary>
-    public static async IAsyncEnumerable<T> JsonLines<T>(this Task<NexarResponse> response,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        using var result = await response.ConfigureAwait(false);
-        await foreach (var item in result.JsonLines<T>(cancellationToken).ConfigureAwait(false))
-        {
-            yield return item;
-        }
-    }
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public static IAsyncEnumerable<T> JsonLines<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default) =>
+        Drain(response, (r, ct) => r.JsonLines<T>(ct), cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="JsonLines{T}(Task{NexarResponse}, CancellationToken)"/>, with source-generated metadata.
+    /// </summary>
+    public static IAsyncEnumerable<T> JsonLines<T>(this Task<NexarResponse> response, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default) =>
+        Drain(response, (r, ct) => r.JsonLines(typeInfo, ct), cancellationToken);
 
     /// <summary>
     /// Awaits the response and reads its JSON array body one element at a time. The response is disposed when the enumeration ends.
     /// </summary>
-    public static async IAsyncEnumerable<T> JsonStream<T>(this Task<NexarResponse> response,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        using var result = await response.ConfigureAwait(false);
-        await foreach (var item in result.JsonStream<T>(cancellationToken).ConfigureAwait(false))
-        {
-            yield return item;
-        }
-    }
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public static IAsyncEnumerable<T> JsonStream<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default) =>
+        Drain(response, (r, ct) => r.JsonStream<T>(ct), cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="JsonStream{T}(Task{NexarResponse}, CancellationToken)"/>, with source-generated metadata.
+    /// </summary>
+    public static IAsyncEnumerable<T> JsonStream<T>(this Task<NexarResponse> response, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default) =>
+        Drain(response, (r, ct) => r.JsonStream(typeInfo, ct), cancellationToken);
 
     /// <summary>
     /// Awaits the response, deserializes its body as JSON and disposes it.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
     public static async Task<T> Json<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default)
     {
         using var result = await response.ConfigureAwait(false);
         return await result.Json<T>(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Awaits the response, deserializes its body with source-generated metadata and disposes it, e.g.
+    /// <c>await client.Get(url).Send().Json(AppJsonContext.Default.User)</c>. Safe for trimming and Native AOT.
+    /// </summary>
+    public static async Task<T> Json<T>(this Task<NexarResponse> response, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        return await result.Json(typeInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async IAsyncEnumerable<T> Drain<T>(Task<NexarResponse> response, Func<NexarResponse, CancellationToken, IAsyncEnumerable<T>> read,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var result = await response.ConfigureAwait(false);
+        await foreach (var item in read(result, cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
     }
 }
