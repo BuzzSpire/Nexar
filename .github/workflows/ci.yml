@@ -78,11 +78,15 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      # Nexar.csproj sets GeneratePackageOnBuild, so build first and pack without rebuilding.
+      - name: Build
+        run: dotnet build Nexar.sln --configuration Release
+
       - name: Pack the three packages
         run: |
-          dotnet pack Nexar/Nexar.csproj --configuration Release --output artifacts
-          dotnet pack Nexar.Testing/Nexar.Testing.csproj --configuration Release --output artifacts
-          dotnet pack Nexar.Extensions.DependencyInjection/Nexar.Extensions.DependencyInjection.csproj --configuration Release --output artifacts
+          dotnet pack Nexar/Nexar.csproj --configuration Release --no-build --output artifacts
+          dotnet pack Nexar.Testing/Nexar.Testing.csproj --configuration Release --no-build --output artifacts
+          dotnet pack Nexar.Extensions.DependencyInjection/Nexar.Extensions.DependencyInjection.csproj --configuration Release --no-build --output artifacts
 
       - uses: actions/upload-artifact@v4
         with:
