@@ -465,6 +465,8 @@ var tail = await client.Get("/files/report.csv").RangeSuffix(100).Send().Text();
 
 `DownloadTo` keeps unfinished data in `{path}.partial` and asks for the rest with a `Range` request. If the server sends the whole resource instead, it starts over. Uploads work the same way: `client.Put(url).File("report.pdf")` and `new MultipartForm().File("doc", "report.pdf")`.
 
+For servers that throttle each connection, `DownloadTo(path, new DownloadOptions { Connections = 4, ChunkSize = 8 << 20 })` fetches ranges in parallel, guarded by `If-Range`. It falls back to one connection when the server does not support ranges.
+
 ## Caching
 
 <!-- snippet: caching -->

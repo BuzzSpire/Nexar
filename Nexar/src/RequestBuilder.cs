@@ -777,6 +777,99 @@ public sealed class RequestBuilder
         }
     }
 
+    /// <summary>
+    /// Downloads to <paramref name="path"/> over several connections, each fetching a range of the file, for servers
+    /// that throttle each connection. A first <c>Range: bytes=0-0</c> request learns the size and ETag; the ranges then
+    /// carry <c>If-Range</c>, so a file that changes mid-download fails instead of mixing versions. When the server
+    /// does not support ranges, the file is downloaded over one connection. Download progress is reported for the
+    /// whole file. Returns the file size.
+    /// </summary>
+    /// <exception cref="NexarException">A range fails, or the resource changed during the download (<see cref="ErrorKind.Body"/>).</exception>
+    public async Task<long> DownloadTo(string path, DownloadOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.Connections);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.ChunkSize);
+        if (!_isReplayable || _method != HttpMethod.Get)
+        {
+            throw new NexarException(ErrorKind.Builder, "Parallel downloads need a GET request without a stream body.");
+        }
+
+        var partial = path + ".partial";
+        try
+        {
+            var probe = ChunkRequest().Range(0, 0);
+            using var first = await probe.Send(cancellationToken).ConfigureAwait(false);
+            await first.ErrorForStatus(cancellationToken).ConfigureAwait(false);
+
+            if (!first.IsPartialContent || first.ContentRange?.Length is not { } total)
+            {
+                // No range support: the probe's response is the whole file.
+                await first.CopyToFileAsync(partial, append: false, cancellationToken).ConfigureAwait(false);
+                System.IO.File.Move(partial, path, overwrite: true);
+                return new FileInfo(path).Length;
+            }
+
+            var etag = first.ETag;
+            using (var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.Write))
+            {
+                file.SetLength(total);
+            }
+
+            long transferred = 0;
+            var ranges = new List<(long From, long To)>();
+            for (long from = 0; from < total; from += options.ChunkSize)
+            {
+                ranges.Add((from, Math.Min(from + options.ChunkSize, total) - 1));
+            }
+
+            await Parallel.ForEachAsync(ranges, new ParallelOptions { MaxDegreeOfParallelism = options.Connections, CancellationToken = cancellationToken },
+                async (range, ct) =>
+                {
+                    var chunk = ChunkRequest().Range(range.From, range.To);
+                    if (etag != null)
+                    {
+                        chunk.IfRange(etag);
+                    }
+                    using var response = await chunk.Send(ct).ConfigureAwait(false);
+                    await response.ErrorForStatus(ct).ConfigureAwait(false);
+                    if (!response.IsPartialContent || response.ContentRange?.From != range.From)
+                    {
+                        throw new NexarException(ErrorKind.Body,
+                            $"{response.Url} changed during the download, or the server ignored a range request.", response.Url);
+                    }
+
+                    await using var body = await response.Stream(ct).ConfigureAwait(false);
+                    await using var file = new FileStream(partial, FileMode.Open, FileAccess.Write, FileShare.Write, 81920, useAsync: true);
+                    file.Seek(range.From, SeekOrigin.Begin);
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await body.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                        var done = Interlocked.Add(ref transferred, read);
+                        _downloadProgress?.Report(new TransferProgress(done, total));
+                    }
+                }).ConfigureAwait(false);
+
+            System.IO.File.Move(partial, path, overwrite: true);
+            return total;
+        }
+        catch
+        {
+            TryDelete(partial);
+            throw;
+        }
+    }
+
+    /// <summary>A copy of this request for one range; progress is aggregated by the caller instead.</summary>
+    private RequestBuilder ChunkRequest()
+    {
+        var clone = TryClone()!;
+        clone._downloadProgress = null;
+        return clone;
+    }
+
     internal static void TryDelete(string path)
     {
         try

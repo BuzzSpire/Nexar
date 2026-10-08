@@ -7,6 +7,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ### Added
 
+- Parallel chunked downloads (`DownloadTo(path, DownloadOptions)`).
 - Request and response hooks (`OnRequest`, `OnResponse`).
 - Streaming request bodies: `JsonLines(IAsyncEnumerable<T>)` (NDJSON) and `JsonStreamed(value)`.
 - TLS certificate pinning (`PinCertificate`, `ClientBuilder.ComputePin`).
