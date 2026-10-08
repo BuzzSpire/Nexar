@@ -1,133 +1,49 @@
-﻿using Nexar.Configuration;
-using Nexar.Interceptors;
-using Nexar.Models;
+using Nexar;
 
-partial class Program
+using var client = NexarClient.Builder()
+    .BaseUrl("https://jsonplaceholder.typicode.com")
+    .Timeout(TimeSpan.FromSeconds(10))
+    .UserAgent("Nexar-samples/3.0")
+    .Retry(maxRetries: 2, delay: TimeSpan.FromMilliseconds(250))
+    .Build();
+
+// GET + JSON, written as one chain
+var post = await client.Get("/posts/1")
+    .Send()
+    .ErrorForStatus()
+    .Json<Post>();
+Console.WriteLine($"GET /posts/1 -> {post.Title}");
+
+// Query parameters
+var posts = await client.Get("/posts")
+    .Query("userId", 1)
+    .Send()
+    .ErrorForStatus()
+    .Json<List<Post>>();
+Console.WriteLine($"GET /posts?userId=1 -> {posts.Count} posts");
+
+// POST with a JSON body, inspecting the response before reading it
+using (var created = await client.Post("/posts")
+    .Json(new Post(0, 1, "Hello", "Sent with Nexar"))
+    .Send())
 {
-    static async Task Main(string[] args)
-    {
-        Console.WriteLine("=== Nexar HTTP Client Examples ===\n");
-
-        // Example 1: Static method usage
-        await StaticMethodExample();
-
-        // Example 2: Nexar.Create() - Instance with config
-        await CreateInstanceExample();
-
-        // Example 3: Request config
-        await RequestConfigExample();
-
-        // Example 4: Response structure (response.data, response.status)
-        await ResponseStructureExample();
-
-        // Example 5: POST with data
-        await PostExample();
-
-        // Example 6: Using params (query parameters)
-        await QueryParamsExample();
-
-        // Example 7: Interceptors
-        await InterceptorExample();
-
-        // Example 8: Raw string responses
-        await RawStringExample();
-
-        // Example 9: Legacy API (backward compatible)
-        await LegacyApiExample();
-
-        Console.WriteLine("\n=== All examples completed ===");
-    }
-
-    static async Task StaticMethodExample()
-    {
-        Console.WriteLine("1. Static Method:");
-
-        var response = await Nexar.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
-
-        if (response.IsSuccess && response.Data != null)
-        {
-            Console.WriteLine($"   Status: {response.Status} ({response.StatusText})");
-            Console.WriteLine($"   Data: {response.Data.name}, {response.Data.country}\n");
-        }
-        else
-        {
-            Console.WriteLine($"   Error: {response.ErrorMessage}\n");
-        }
-    }
-
-    static async Task CreateInstanceExample()
-    {
-        Console.WriteLine("2. Nexar.Create() - Instance with config:");
-
-        var api = Nexar.Nexar.Create(new NexarConfig
-        {
-            BaseUrl = "https://freetestapi.com",
-            DefaultHeaders = new Dictionary<string, string>
-            {
-                { "Accept", "application/json" },
-                { "User-Agent", "Nexar/1.0" }
-            },
-            TimeoutMs = 30_000
-        });
-
-        // Now use relative URLs
-        var response = await api.GetAsync<Destination>("/api/v1/destinations/2");
-
-        Console.WriteLine($"   Status: {response.Status}");
-        Console.WriteLine($"   Success: {response.IsSuccess}\n");
-    }
-
-    static async Task RequestConfigExample()
-    {
-        Console.WriteLine("3. Request Config:");
-
-        var response = await Nexar.Nexar.Request<Destination>(new RequestOptions
-        {
-            Method = "GET",
-            Url = "https://freetestapi.com/api/v1/destinations/1",
-            Headers = new Dictionary<string, string>
-            {
-                { "Accept", "application/json" }
-            },
-            Timeout = 5000
-        });
-
-        Console.WriteLine($"   Status: {response.Status}");
-        Console.WriteLine($"   Data: {response.Data?.name ?? "N/A"}\n");
-    }
-
-    static async Task ResponseStructureExample()
-    {
-        Console.WriteLine("4. Response Structure (response.data, response.status):");
-
-        var response = await Nexar.Nexar.Get<Destination>("https://freetestapi.com/api/v1/destinations/1");
-
-        // Access response properties
-        Console.WriteLine($"   response.status: {response.Status}");
-        Console.WriteLine($"   response.statusText: {response.StatusText}");
-        Console.WriteLine($"   response.data: {response.Data?.name ?? "N/A"}");
-        Console.WriteLine($"   response.headers: {response.Headers.Count} headers");
-        Console.WriteLine($"   Success: {response.IsSuccess}\n");
-    }
-
-    static async Task PostExample()
-    {
-        Console.WriteLine("5. POST with data:");
-
-        var newDestination = new
-        {
-            name = "Paris",
-            country = "France",
-            description = "City of Light"
-        };
-
-        var response = await Nexar.Nexar.Post<object>(
-            "https://freetestapi.com/api/v1/destinations",
-            newDestination
-        );
-
-        Console.WriteLine($"   Status: {response.Status}");
-        Console.WriteLine($"   Success: {response.IsSuccess}\n");
-    }
-
+    Console.WriteLine($"POST /posts -> {created.Status}, id {(await created.Json<Post>()).Id}");
 }
+
+// 4xx/5xx are normal responses until you call ErrorForStatus()
+using (var missing = await client.Get("/posts/999999").Send())
+{
+    Console.WriteLine($"GET /posts/999999 -> {missing.Status} (IsSuccess: {missing.IsSuccess})");
+}
+
+// Errors
+try
+{
+    await client.Get("/posts/999999").Send().ErrorForStatus();
+}
+catch (NexarException e) when (e.IsStatus)
+{
+    Console.WriteLine($"ErrorForStatus -> {e.Kind}: {e.StatusCode}");
+}
+
+record Post(int Id, int UserId, string Title, string Body);
