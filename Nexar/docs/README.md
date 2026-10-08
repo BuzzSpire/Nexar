@@ -141,6 +141,7 @@ await client.Get("/health").NoAuth().Send();                            // no cr
 |---|---|
 | `Auth.Bearer(token)` | `Authorization: Bearer ...` with a fixed token |
 | `Auth.Bearer(ct => GetTokenAsync(ct))` | Bearer token fetched before every request |
+| `Auth.Bearer((forceRefresh, ct) => ...)` | Same, plus a forced refresh and one re-send after a `401` |
 | `Auth.Basic(user, password)` | HTTP Basic (RFC 7617) |
 | `Auth.ApiKeyHeader("X-Api-Key", key)` | API key in a header |
 | `Auth.ApiKeyQuery("api_key", key)` | API key in the query string |
