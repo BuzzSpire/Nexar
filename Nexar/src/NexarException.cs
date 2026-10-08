@@ -30,7 +30,10 @@ public enum ErrorKind
     Decode,
 
     /// <summary>Credentials could not be obtained or applied (e.g. the OAuth token endpoint failed).</summary>
-    Auth
+    Auth,
+
+    /// <summary>A redirect was not followed: too many hops, or a redirect from HTTPS to HTTP.</summary>
+    Redirect
 }
 
 /// <summary>
@@ -121,4 +124,7 @@ public sealed class NexarException : Exception
 
     /// <summary>True if credentials could not be obtained or applied.</summary>
     public bool IsAuth => Kind == ErrorKind.Auth;
+
+    /// <summary>True if a redirect was not followed.</summary>
+    public bool IsRedirect => Kind == ErrorKind.Redirect;
 }

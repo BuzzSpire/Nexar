@@ -23,6 +23,8 @@ public sealed class RequestBuilder
     private bool _isReplayable = true;
     private TimeSpan? _timeout;
     private Version? _version;
+    private HttpVersionPolicy? _versionPolicy;
+    private bool? _expectContinue;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -486,11 +488,28 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
-    /// Sets the HTTP version to request.
+    /// Sets the HTTP version to request, overriding <see cref="ClientBuilder.HttpVersion"/>.
     /// </summary>
-    public RequestBuilder Version(Version version)
+    /// <param name="version">e.g. <see cref="System.Net.HttpVersion.Version20"/>.</param>
+    /// <param name="policy">
+    /// Whether a lower (default) or higher version may be negotiated, or only this one
+    /// (<see cref="HttpVersionPolicy.RequestVersionExact"/>, e.g. for HTTP/3 only).
+    /// </param>
+    public RequestBuilder Version(Version version, HttpVersionPolicy? policy = null)
     {
+        ArgumentNullException.ThrowIfNull(version);
         _version = version;
+        _versionPolicy = policy;
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <c>Expect: 100-continue</c> with the body, so the server can reject the request (auth, size, quota)
+    /// before the body is uploaded. Overrides <see cref="ClientBuilder.ExpectContinue"/>.
+    /// </summary>
+    public RequestBuilder ExpectContinue(bool expect = true)
+    {
+        _expectContinue = expect;
         return this;
     }
 
@@ -528,8 +547,21 @@ public sealed class RequestBuilder
             ? _auth
             : _headers.ContainsKey("Authorization") ? null : _client.Authenticator;
 
-        return new PreparedRequest(_method, url, headers, _content, _isReplayable, _timeout, _version, authenticator,
-            isIdempotent: _retryable ?? IsIdempotent(_method));
+        var defaults = _client.RequestDefaults;
+        return new PreparedRequest
+        {
+            Method = _method,
+            Url = url,
+            Headers = headers,
+            Content = _content,
+            IsReplayable = _isReplayable,
+            IsIdempotent = _retryable ?? IsIdempotent(_method),
+            Authenticator = authenticator,
+            Timeout = _timeout,
+            Version = _version ?? defaults.Version,
+            VersionPolicy = _version != null ? _versionPolicy : defaults.VersionPolicy,
+            ExpectContinue = _expectContinue ?? defaults.ExpectContinue
+        };
     }
 
     private static bool IsIdempotent(HttpMethod method) =>

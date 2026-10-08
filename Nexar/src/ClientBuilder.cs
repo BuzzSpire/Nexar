@@ -12,14 +12,24 @@ public sealed class ClientBuilder
     private readonly Dictionary<string, string> _defaultHeaders = new(StringComparer.OrdinalIgnoreCase);
     private JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private RetryPolicy _retry = RetryPolicy.None;
-    private bool _acceptInvalidCerts;
     private System.Net.Http.HttpMessageHandler? _primaryHandler;
     private readonly List<DelegatingHandler> _handlers = new();
     private System.Net.Http.HttpClient? _httpClient;
     private IAuthenticator? _authenticator;
-    private System.Net.ICredentials? _credentials;
-    private bool _preAuthenticate;
-    private System.Net.DecompressionMethods? _decompression;
+    private RedirectPolicy _redirects = RedirectPolicy.Default;
+    private RequestDefaults _requestDefaults = RequestDefaults.None;
+
+    // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
+    // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
+    private readonly Dictionary<string, Action<SocketsHttpHandler>> _handlerSettings = new();
+    private bool _acceptInvalidCerts;
+    private System.Net.WebProxy? _proxy;
+    private readonly List<string> _proxyBypass = new();
+    private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _clientCertificates = new();
+    private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _rootCertificates = new();
+    private ConnectTarget? _connectTarget;
+    private readonly Dictionary<string, System.Net.IPAddress[]> _resolve = new(StringComparer.OrdinalIgnoreCase);
+    private System.Net.IPAddress? _localAddress;
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
@@ -125,8 +135,404 @@ public sealed class ClientBuilder
     public ClientBuilder Credentials(System.Net.ICredentials credentials, bool preAuthenticate = false)
     {
         ArgumentNullException.ThrowIfNull(credentials);
-        _credentials = credentials;
-        _preAuthenticate = preAuthenticate;
+        return Configure(nameof(Credentials), h =>
+        {
+            h.Credentials = credentials;
+            h.PreAuthenticate = preAuthenticate;
+        });
+    }
+
+    /// <summary>
+    /// Sets how redirects are followed. Defaults to <see cref="RedirectPolicy.Default"/> (up to 10 hops).
+    /// When the limit is exceeded, <c>Send()</c> throws <see cref="ErrorKind.Redirect"/>.
+    /// Redirects from HTTPS to HTTP are never followed.
+    /// </summary>
+    public ClientBuilder Redirects(RedirectPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        _redirects = policy;
+        return Configure(nameof(Redirects), _ => { });
+    }
+
+    /// <summary>
+    /// Keeps cookies from <c>Set-Cookie</c> responses and sends them on later requests to the same site.
+    /// Without this, the client is stateless and only sends a <c>Cookie</c> header you set yourself.
+    /// </summary>
+    /// <param name="cookies">A jar to inspect or pre-fill; a new one is used if null.</param>
+    public ClientBuilder CookieStore(System.Net.CookieContainer? cookies = null)
+    {
+        var container = cookies ?? new System.Net.CookieContainer();
+        return Configure(nameof(CookieStore), h =>
+        {
+            h.UseCookies = true;
+            h.CookieContainer = container;
+        });
+    }
+
+    /// <summary>
+    /// Sends requests through the proxy at <paramref name="url"/> (<c>http</c>, <c>https</c>, <c>socks4</c>,
+    /// <c>socks4a</c> or <c>socks5</c>). Without this, the system proxy and the <c>HTTP(S)_PROXY</c> /
+    /// <c>NO_PROXY</c> environment variables are used.
+    /// </summary>
+    /// <param name="url">The proxy URL, e.g. <c>http://proxy.local:8080</c>.</param>
+    /// <param name="credentials">Credentials for proxies that answer <c>407 Proxy Authentication Required</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="url"/> is not an absolute URL with a supported scheme.</exception>
+    public ClientBuilder Proxy(string url, System.Net.ICredentials? credentials = null)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or "socks4" or "socks4a" or "socks5"))
+        {
+            throw new ArgumentException($"'{url}' is not a proxy URL (http, https, socks4, socks4a or socks5).", nameof(url));
+        }
+
+        _proxy = new System.Net.WebProxy(uri) { Credentials = credentials };
+        return ApplyProxy();
+    }
+
+    /// <summary>
+    /// Hosts that skip the proxy set with <see cref="Proxy"/>. A leading <c>*</c> matches any prefix,
+    /// e.g. <c>*.internal.example.com</c>.
+    /// </summary>
+    public ClientBuilder ProxyBypass(params string[] hosts)
+    {
+        _proxyBypass.AddRange(hosts);
+        return _proxy == null ? this : ApplyProxy();
+    }
+
+    /// <summary>
+    /// Connects directly, ignoring the system proxy and proxy environment variables.
+    /// </summary>
+    public ClientBuilder NoProxy()
+    {
+        _proxy = null;
+        return Configure("Proxy", h => h.UseProxy = false);
+    }
+
+    private ClientBuilder ApplyProxy()
+    {
+        var proxy = _proxy!;
+        // WebProxy matches these regexes against "scheme://host[:port]".
+        proxy.BypassList = _proxyBypass
+            .Select(host => @"^(?:[a-z][a-z0-9+.\-]*://)?" + System.Text.RegularExpressions.Regex.Escape(host).Replace("\\*", ".*") + @"(?::\d+)?$")
+            .ToArray();
+        return Configure("Proxy", h =>
+        {
+            h.UseProxy = true;
+            h.Proxy = proxy;
+        });
+    }
+
+    /// <summary>
+    /// Presents <paramref name="certificate"/> (with its private key) to servers that ask for a client certificate (mTLS).
+    /// Call it more than once to offer several; the one issued by a CA the server accepts is preferred.
+    /// </summary>
+    public ClientBuilder ClientCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        if (!certificate.HasPrivateKey)
+        {
+            throw new ArgumentException("A client certificate needs its private key.", nameof(certificate));
+        }
+        _clientCertificates.Add(certificate);
+        return Configure(nameof(ClientCertificate), h =>
+        {
+            h.SslOptions.ClientCertificates = new System.Security.Cryptography.X509Certificates.X509CertificateCollection(_clientCertificates.ToArray());
+            h.SslOptions.LocalCertificateSelectionCallback = SelectClientCertificate;
+        });
+    }
+
+    /// <summary>
+    /// Also trusts server certificates issued by <paramref name="certificate"/>, e.g. a private company CA,
+    /// in addition to the system trust store. Host names are still checked.
+    /// </summary>
+    public ClientBuilder AddRootCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        _rootCertificates.Add(certificate);
+        return Configure(nameof(AddRootCertificate), h => h.SslOptions.RemoteCertificateValidationCallback = ValidateWithCustomRoots);
+    }
+
+    /// <summary>
+    /// Refuses TLS versions older than <paramref name="version"/>: <see cref="System.Security.Authentication.SslProtocols.Tls12"/>
+    /// or <see cref="System.Security.Authentication.SslProtocols.Tls13"/>.
+    /// </summary>
+    public ClientBuilder MinTlsVersion(System.Security.Authentication.SslProtocols version)
+    {
+        var enabled = version switch
+        {
+            System.Security.Authentication.SslProtocols.Tls12 => System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+            System.Security.Authentication.SslProtocols.Tls13 => System.Security.Authentication.SslProtocols.Tls13,
+            _ => throw new ArgumentException("The minimum TLS version must be Tls12 or Tls13.", nameof(version))
+        };
+        return Configure(nameof(MinTlsVersion), h => h.SslOptions.EnabledSslProtocols = enabled);
+    }
+
+    private System.Security.Cryptography.X509Certificates.X509Certificate SelectClientCertificate(
+        object sender, string targetHost,
+        System.Security.Cryptography.X509Certificates.X509CertificateCollection localCertificates,
+        System.Security.Cryptography.X509Certificates.X509Certificate? remoteCertificate, string[] acceptableIssuers)
+    {
+        // Prefer a certificate from an issuer the server named; otherwise present the first one anyway,
+        // since servers often send an empty or unrelated issuer list.
+        return _clientCertificates.FirstOrDefault(c => acceptableIssuers.Contains(c.Issuer, StringComparer.OrdinalIgnoreCase))
+            ?? _clientCertificates[0];
+    }
+
+    private bool ValidateWithCustomRoots(
+        object sender, System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
+        System.Security.Cryptography.X509Certificates.X509Chain? chain, System.Net.Security.SslPolicyErrors errors)
+    {
+        if (errors == System.Net.Security.SslPolicyErrors.None)
+        {
+            return true;
+        }
+        // Only an untrusted chain can be fixed by extra roots; a wrong host name or a missing certificate cannot.
+        if (certificate == null || errors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
+        {
+            return false;
+        }
+
+        using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
+        custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+        custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
+        custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+        if (chain != null)
+        {
+            foreach (var element in chain.ChainElements)
+            {
+                custom.ChainPolicy.ExtraStore.Add(element.Certificate);
+            }
+        }
+        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
+        return custom.Build(leaf);
+    }
+
+    /// <summary>
+    /// Limits how long establishing a connection (TCP connect and TLS handshake) may take, separately from
+    /// <see cref="Timeout"/>, so unreachable hosts fail fast while slow responses are still allowed.
+    /// A connect timeout raises <see cref="ErrorKind.Timeout"/>.
+    /// </summary>
+    public ClientBuilder ConnectTimeout(TimeSpan timeout)
+    {
+        ValidateTimeout(timeout);
+        return Configure(nameof(ConnectTimeout), h => h.ConnectTimeout = timeout);
+    }
+
+    /// <summary>
+    /// How long an idle pooled connection is kept for reuse. The platform default is 1 minute.
+    /// </summary>
+    public ClientBuilder PoolIdleTimeout(TimeSpan timeout)
+    {
+        ValidateTimeout(timeout);
+        return Configure(nameof(PoolIdleTimeout), h => h.PooledConnectionIdleTimeout = timeout);
+    }
+
+    /// <summary>
+    /// How long a pooled connection may live before it is replaced, so long-running services pick up DNS changes.
+    /// The platform default is unlimited.
+    /// </summary>
+    public ClientBuilder PoolConnectionLifetime(TimeSpan lifetime)
+    {
+        ValidateTimeout(lifetime);
+        return Configure(nameof(PoolConnectionLifetime), h => h.PooledConnectionLifetime = lifetime);
+    }
+
+    /// <summary>
+    /// The maximum number of simultaneous connections to one host (HTTP/1.1). The platform default is unlimited.
+    /// </summary>
+    public ClientBuilder MaxConnectionsPerHost(int max)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(max);
+        return Configure(nameof(MaxConnectionsPerHost), h => h.MaxConnectionsPerServer = max);
+    }
+
+    /// <summary>
+    /// Sets the HTTP version requests ask for. Requests can override it with <see cref="RequestBuilder.Version"/>.
+    /// </summary>
+    /// <param name="version">e.g. <see cref="System.Net.HttpVersion.Version20"/>.</param>
+    /// <param name="policy">
+    /// <see cref="HttpVersionPolicy.RequestVersionOrLower"/> (the default) allows falling back,
+    /// <see cref="HttpVersionPolicy.RequestVersionOrHigher"/> allows upgrading,
+    /// <see cref="HttpVersionPolicy.RequestVersionExact"/> fails if the version is unavailable.
+    /// </param>
+    public ClientBuilder HttpVersion(Version version, HttpVersionPolicy policy = HttpVersionPolicy.RequestVersionOrLower)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        _requestDefaults = _requestDefaults with { Version = version, VersionPolicy = policy };
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <c>Expect: 100-continue</c> with every request body, so servers can reject requests before large
+    /// uploads. Requests can override it with <see cref="RequestBuilder.ExpectContinue"/>.
+    /// </summary>
+    public ClientBuilder ExpectContinue(bool expect = true)
+    {
+        _requestDefaults = _requestDefaults with { ExpectContinue = expect };
+        return this;
+    }
+
+    /// <summary>
+    /// How long to wait for the server's <c>100 Continue</c> before sending the body anyway. The platform default is 1 second.
+    /// </summary>
+    public ClientBuilder ExpectContinueTimeout(TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(timeout, TimeSpan.Zero);
+        return Configure(nameof(ExpectContinueTimeout), h => h.Expect100ContinueTimeout = timeout);
+    }
+
+    /// <summary>
+    /// Opens additional HTTP/2 connections to a server when the streams of one connection are exhausted,
+    /// for high-throughput services.
+    /// </summary>
+    public ClientBuilder Http2MultipleConnections(bool enable = true) =>
+        Configure(nameof(Http2MultipleConnections), h => h.EnableMultipleHttp2Connections = enable);
+
+    /// <summary>
+    /// Sends HTTP/2 keep-alive pings every <paramref name="interval"/>, and closes the connection if a ping is not
+    /// answered within <paramref name="timeout"/>, so idle connections are not silently dropped by middleboxes.
+    /// </summary>
+    public ClientBuilder Http2KeepAlive(TimeSpan interval, TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        return Configure(nameof(Http2KeepAlive), h =>
+        {
+            h.KeepAlivePingDelay = interval;
+            h.KeepAlivePingTimeout = timeout;
+            h.KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always;
+        });
+    }
+
+    /// <summary>
+    /// Opens additional HTTP/3 connections to a server when the streams of one connection are exhausted.
+    /// </summary>
+    public ClientBuilder Http3MultipleConnections(bool enable = true) =>
+        Configure(nameof(Http3MultipleConnections), h => h.EnableMultipleHttp3Connections = enable);
+
+    /// <summary>
+    /// Connects to the Unix domain socket at <paramref name="path"/> instead of a TCP host, e.g. the Docker Engine
+    /// API at <c>/var/run/docker.sock</c>. Use any host in the URLs, e.g. <c>BaseUrl("http://localhost")</c>.
+    /// </summary>
+    public ClientBuilder UnixSocket(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        _connectTarget = new ConnectTarget.Unix(path);
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Connects to the local named pipe <paramref name="pipeName"/> instead of a TCP host, e.g. <c>docker_engine</c>
+    /// on Windows. Use any host in the URLs, e.g. <c>BaseUrl("http://localhost")</c>.
+    /// </summary>
+    public ClientBuilder NamedPipe(string pipeName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(pipeName);
+        _connectTarget = new ConnectTarget.Pipe(pipeName);
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Connects to <paramref name="addresses"/> whenever a URL names <paramref name="host"/>, skipping DNS.
+    /// The <c>Host</c> header and TLS certificate checks still use <paramref name="host"/>.
+    /// </summary>
+    public ClientBuilder Resolve(string host, params System.Net.IPAddress[] addresses)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        if (addresses.Length == 0)
+        {
+            throw new ArgumentException("At least one address is required.", nameof(addresses));
+        }
+        _resolve[host] = addresses;
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Sends from the local <paramref name="address"/>, for servers with several network interfaces.
+    /// </summary>
+    public ClientBuilder LocalAddress(System.Net.IPAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        _localAddress = address;
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    private async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    {
+        switch (_connectTarget)
+        {
+            case ConnectTarget.Unix unix:
+            {
+                var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+                try
+                {
+                    await socket.ConnectAsync(new System.Net.Sockets.UnixDomainSocketEndPoint(unix.Path), cancellationToken).ConfigureAwait(false);
+                    return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            }
+            case ConnectTarget.Pipe pipe:
+            {
+                var stream = new System.IO.Pipes.NamedPipeClientStream(".", pipe.Name, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
+                try
+                {
+                    await stream.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    return stream;
+                }
+                catch
+                {
+                    await stream.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
+            }
+        }
+
+        var endPoint = context.DnsEndPoint;
+        var addresses = _resolve.TryGetValue(endPoint.Host, out var overridden)
+            ? overridden
+            : await System.Net.Dns.GetHostAddressesAsync(endPoint.Host, cancellationToken).ConfigureAwait(false);
+
+        Exception? lastError = null;
+        foreach (var address in addresses)
+        {
+            if (_localAddress != null && _localAddress.AddressFamily != address.AddressFamily)
+            {
+                continue;
+            }
+
+            var socket = new System.Net.Sockets.Socket(address.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                if (_localAddress != null)
+                {
+                    socket.Bind(new System.Net.IPEndPoint(_localAddress, 0));
+                }
+                await socket.ConnectAsync(new System.Net.IPEndPoint(address, endPoint.Port), cancellationToken).ConfigureAwait(false);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                socket.Dispose();
+                lastError = ex;
+            }
+        }
+
+        throw lastError ?? new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressFamilyNotSupported);
+    }
+
+    private abstract record ConnectTarget
+    {
+        public sealed record Unix(string Path) : ConnectTarget;
+
+        public sealed record Pipe(string Name) : ConnectTarget;
+    }
+
+    private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
+    {
+        _handlerSettings[setting] = apply;
         return this;
     }
 
@@ -176,11 +582,8 @@ public sealed class ClientBuilder
     /// <summary>
     /// Sets which encodings the default handler asks for and decodes. Defaults to gzip, deflate and Brotli.
     /// </summary>
-    public ClientBuilder Decompression(System.Net.DecompressionMethods methods)
-    {
-        _decompression = methods;
-        return this;
-    }
+    public ClientBuilder Decompression(System.Net.DecompressionMethods methods) =>
+        Configure(nameof(Decompression), h => h.AutomaticDecompression = methods);
 
     /// <summary>
     /// Disables TLS certificate validation. Only use this for local development.
@@ -188,6 +591,11 @@ public sealed class ClientBuilder
     public ClientBuilder DangerAcceptInvalidCerts(bool accept = true)
     {
         _acceptInvalidCerts = accept;
+        if (accept)
+        {
+            return Configure(nameof(DangerAcceptInvalidCerts), _ => { });
+        }
+        _handlerSettings.Remove(nameof(DangerAcceptInvalidCerts));
         return this;
     }
 
@@ -245,20 +653,26 @@ public sealed class ClientBuilder
             }
         }
 
-        var configuresDefaultHandler = _acceptInvalidCerts || _credentials != null || _decompression != null;
-
-        if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || configuresDefaultHandler))
+        if (_connectTarget != null && (_resolve.Count > 0 || _localAddress != null))
         {
-            throw new NexarException(
-                ErrorKind.Builder,
-                "HttpClient() cannot be combined with HttpMessageHandler(), AddHandler(), DangerAcceptInvalidCerts(), Credentials() or Decompression().");
+            throw new NexarException(ErrorKind.Builder,
+                "UnixSocket() and NamedPipe() cannot be combined with Resolve() or LocalAddress(), which apply to TCP connections.");
         }
 
-        if (_primaryHandler != null && configuresDefaultHandler)
+        var handlerSettings = string.Join(", ", _handlerSettings.Keys.Select(k => k == "Connect" ? "UnixSocket()/NamedPipe()/Resolve()/LocalAddress()" : $"{k}()"));
+
+        if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || _handlerSettings.Count > 0))
         {
             throw new NexarException(
                 ErrorKind.Builder,
-                "HttpMessageHandler() cannot be combined with DangerAcceptInvalidCerts(), Credentials() or Decompression(); configure your handler directly.");
+                $"HttpClient() cannot be combined with HttpMessageHandler(), AddHandler() or handler settings ({handlerSettings}); configure that HttpClient directly.");
+        }
+
+        if (_primaryHandler != null && _handlerSettings.Count > 0)
+        {
+            throw new NexarException(
+                ErrorKind.Builder,
+                $"HttpMessageHandler() cannot be combined with handler settings ({handlerSettings}); configure your handler directly.");
         }
 
         var jsonOptions = new JsonSerializerOptions(_jsonOptions);
@@ -281,7 +695,10 @@ public sealed class ClientBuilder
             jsonOptions,
             _authenticator,
             _logger,
-            new Redactor(_redactHeaders, _redactQueryParameters));
+            new Redactor(_redactHeaders, _redactQueryParameters),
+            // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
+            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
+            _requestDefaults);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()
@@ -301,16 +718,19 @@ public sealed class ClientBuilder
     {
         var handler = new SocketsHttpHandler
         {
-            AutomaticDecompression = _decompression ?? System.Net.DecompressionMethods.All
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+            AllowAutoRedirect = _redirects.MaxRedirects > 0,
+            MaxAutomaticRedirections = Math.Max(_redirects.MaxRedirects, 1),
+            // Stateless unless CookieStore() is used.
+            UseCookies = false
         };
+        foreach (var apply in _handlerSettings.Values)
+        {
+            apply(handler);
+        }
         if (_acceptInvalidCerts)
         {
             handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
-        if (_credentials != null)
-        {
-            handler.Credentials = _credentials;
-            handler.PreAuthenticate = _preAuthenticate;
         }
         return handler;
     }

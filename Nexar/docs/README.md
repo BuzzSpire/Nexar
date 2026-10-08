@@ -40,7 +40,16 @@ var client = new NexarClient();
 |---|---|
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(TimeSpan)` | Total time for one attempt: sending, receiving headers, and reading the body with `Text()`/`Bytes()`/`Json<T>()`. `Stream()` is not limited. Default 100 s. |
+| `ConnectTimeout(t)`, `PoolIdleTimeout(t)`, `PoolConnectionLifetime(t)`, `MaxConnectionsPerHost(n)` | Fail fast on unreachable hosts (TCP + TLS handshake), and tune connection reuse, e.g. a lifetime so DNS changes are picked up. |
+| `UnixSocket(path)`, `NamedPipe(name)` | Talk HTTP to local daemons such as the Docker Engine API. |
+| `Resolve(host, addresses...)`, `LocalAddress(ip)` | Skip DNS for a host (TLS and `Host` still use the name), or send from a specific interface. |
+| `HttpVersion(version, policy)` | Default HTTP version and fallback policy for all requests, e.g. HTTP/2 or HTTP/3 only. |
+| `ExpectContinue()`, `ExpectContinueTimeout(t)` | Send `Expect: 100-continue` with bodies so servers can reject large uploads early. |
+| `Http2MultipleConnections()`, `Http2KeepAlive(interval, timeout)`, `Http3MultipleConnections()` | HTTP/2 and HTTP/3 connection tuning for high-throughput services. |
 | `Decompression(methods)` | Encodings to ask for and decode. Default: gzip, deflate and Brotli. |
+| `Proxy(url, credentials?)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP(S) or SOCKS proxy; by default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
+| `CookieStore(jar?)` | Keeps `Set-Cookie` cookies and sends them back. Without it the client is stateless. |
+| `Redirects(policy)` | `RedirectPolicy.Default` (up to 10 hops), `Limited(n)` or `None` (3xx returned as-is). Exceeding the limit throws `ErrorKind.Redirect`; HTTPS to HTTP is never followed. |
 | `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)` | Headers sent with every request. A request header with the same name wins. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | JSON settings. Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
 | `Retry(maxRetries, delay, exponentialBackoff)` | Retries transient failures. Off by default. |
@@ -49,6 +58,7 @@ var client = new NexarClient();
 | `AddHandler(DelegatingHandler)` | Adds middleware (logging, auth refresh, Polly, ...). Runs in the order added. |
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
 | `HttpClient(httpClient)` | Uses an existing `HttpClient`, e.g. from `IHttpClientFactory`. Nexar never disposes it. |
+| `ClientCertificate(cert)`, `AddRootCertificate(ca)`, `MinTlsVersion(version)` | mTLS client certificates, extra trusted CAs (host names are still checked), TLS 1.2+ or 1.3 only. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation. Local development only. |
 | `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | Logging and secret redaction. See [Observability](#observability). |
 
@@ -76,7 +86,7 @@ var response = await client.Post("/orders")
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
 | Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| Stream, contentType)`, `Body(string, Encoding, mediaType)` |
-| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(Version)` |
+| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)` |
 
 ### Bodies
 
@@ -219,6 +229,7 @@ Everything Nexar throws is a `NexarException` with a `Kind`:
 | `Body` | The response body could not be read. |
 | `Decode` | `Json<T>()` got an empty, `null` or invalid body. |
 | `Auth` | Credentials could not be obtained or applied, e.g. the OAuth token endpoint failed. |
+| `Redirect` | A redirect was not followed: more hops than the `RedirectPolicy` allows, or HTTPS to HTTP. |
 
 A 4xx/5xx status is **not** an exception by itself. It is a normal response until you call `ErrorForStatus()`:
 
