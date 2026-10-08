@@ -17,6 +17,7 @@ public sealed class ClientBuilder
     private System.Net.Http.HttpClient? _httpClient;
     private IAuthenticator? _authenticator;
     private RedirectPolicy _redirects = RedirectPolicy.Default;
+    private RequestDefaults _requestDefaults = RequestDefaults.None;
 
     // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
     // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
@@ -341,6 +342,70 @@ public sealed class ClientBuilder
         return Configure(nameof(MaxConnectionsPerHost), h => h.MaxConnectionsPerServer = max);
     }
 
+    /// <summary>
+    /// Sets the HTTP version requests ask for. Requests can override it with <see cref="RequestBuilder.Version"/>.
+    /// </summary>
+    /// <param name="version">e.g. <see cref="System.Net.HttpVersion.Version20"/>.</param>
+    /// <param name="policy">
+    /// <see cref="HttpVersionPolicy.RequestVersionOrLower"/> (the default) allows falling back,
+    /// <see cref="HttpVersionPolicy.RequestVersionOrHigher"/> allows upgrading,
+    /// <see cref="HttpVersionPolicy.RequestVersionExact"/> fails if the version is unavailable.
+    /// </param>
+    public ClientBuilder HttpVersion(Version version, HttpVersionPolicy policy = HttpVersionPolicy.RequestVersionOrLower)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        _requestDefaults = _requestDefaults with { Version = version, VersionPolicy = policy };
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <c>Expect: 100-continue</c> with every request body, so servers can reject requests before large
+    /// uploads. Requests can override it with <see cref="RequestBuilder.ExpectContinue"/>.
+    /// </summary>
+    public ClientBuilder ExpectContinue(bool expect = true)
+    {
+        _requestDefaults = _requestDefaults with { ExpectContinue = expect };
+        return this;
+    }
+
+    /// <summary>
+    /// How long to wait for the server's <c>100 Continue</c> before sending the body anyway. The platform default is 1 second.
+    /// </summary>
+    public ClientBuilder ExpectContinueTimeout(TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(timeout, TimeSpan.Zero);
+        return Configure(nameof(ExpectContinueTimeout), h => h.Expect100ContinueTimeout = timeout);
+    }
+
+    /// <summary>
+    /// Opens additional HTTP/2 connections to a server when the streams of one connection are exhausted,
+    /// for high-throughput services.
+    /// </summary>
+    public ClientBuilder Http2MultipleConnections(bool enable = true) =>
+        Configure(nameof(Http2MultipleConnections), h => h.EnableMultipleHttp2Connections = enable);
+
+    /// <summary>
+    /// Sends HTTP/2 keep-alive pings every <paramref name="interval"/>, and closes the connection if a ping is not
+    /// answered within <paramref name="timeout"/>, so idle connections are not silently dropped by middleboxes.
+    /// </summary>
+    public ClientBuilder Http2KeepAlive(TimeSpan interval, TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        return Configure(nameof(Http2KeepAlive), h =>
+        {
+            h.KeepAlivePingDelay = interval;
+            h.KeepAlivePingTimeout = timeout;
+            h.KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always;
+        });
+    }
+
+    /// <summary>
+    /// Opens additional HTTP/3 connections to a server when the streams of one connection are exhausted.
+    /// </summary>
+    public ClientBuilder Http3MultipleConnections(bool enable = true) =>
+        Configure(nameof(Http3MultipleConnections), h => h.EnableMultipleHttp3Connections = enable);
+
     private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
     {
         _handlerSettings[setting] = apply;
@@ -502,7 +567,8 @@ public sealed class ClientBuilder
             _logger,
             new Redactor(_redactHeaders, _redactQueryParameters),
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
-            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null);
+            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
+            _requestDefaults);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

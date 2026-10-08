@@ -47,6 +47,8 @@ public sealed class NexarClient : IDisposable
 
     internal IAuthenticator? Authenticator => _options.Authenticator;
 
+    internal RequestDefaults RequestDefaults => _options.RequestDefaults;
+
     /// <summary>Starts a GET request.</summary>
     public RequestBuilder Get(string url) => Request(HttpMethod.Get, url);
 
@@ -438,4 +440,13 @@ internal sealed record ClientOptions(
     IAuthenticator? Authenticator,
     ILogger Logger,
     Redactor Redactor,
-    int? RedirectLimit);
+    int? RedirectLimit,
+    RequestDefaults RequestDefaults);
+
+/// <summary>
+/// Client-wide defaults that individual requests can override.
+/// </summary>
+internal sealed record RequestDefaults(Version? Version, HttpVersionPolicy? VersionPolicy, bool ExpectContinue)
+{
+    public static readonly RequestDefaults None = new(null, null, false);
+}

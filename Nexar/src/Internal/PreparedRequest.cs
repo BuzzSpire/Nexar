@@ -3,44 +3,55 @@ namespace Nexar;
 /// <summary>
 /// A fully built request that can produce a fresh <see cref="HttpRequestMessage"/> for every attempt.
 /// </summary>
-internal sealed class PreparedRequest(
-    HttpMethod method,
-    Uri url,
-    IReadOnlyDictionary<string, IReadOnlyList<string>> headers,
-    Func<HttpContent>? content,
-    bool isReplayable,
-    TimeSpan? timeout,
-    Version? version,
-    IAuthenticator? authenticator,
-    bool isIdempotent)
+internal sealed class PreparedRequest
 {
-    public HttpMethod Method { get; } = method;
+    public required HttpMethod Method { get; init; }
 
-    public Uri Url { get; } = url;
+    public required Uri Url { get; init; }
+
+    public required IReadOnlyDictionary<string, IReadOnlyList<string>> Headers { get; init; }
+
+    /// <summary>Creates the body for one attempt, or null for no body.</summary>
+    public Func<HttpContent>? Content { get; init; }
+
+    /// <summary>Whether the body can be created again for a retry.</summary>
+    public bool IsReplayable { get; init; } = true;
 
     /// <summary>Whether timeouts and transient statuses may be retried.</summary>
-    public bool IsIdempotent { get; } = isIdempotent;
+    public bool IsIdempotent { get; init; }
 
-    public IAuthenticator? Authenticator { get; } = authenticator;
+    public IAuthenticator? Authenticator { get; init; }
 
-    public bool IsReplayable { get; } = isReplayable;
+    public TimeSpan? Timeout { get; init; }
 
-    public TimeSpan? Timeout { get; } = timeout;
+    public Version? Version { get; init; }
+
+    public HttpVersionPolicy? VersionPolicy { get; init; }
+
+    public bool ExpectContinue { get; init; }
 
     public HttpRequestMessage CreateMessage()
     {
         var message = new HttpRequestMessage(Method, Url);
-        if (version != null)
+        if (Version != null)
         {
-            message.Version = version;
+            message.Version = Version;
+        }
+        if (VersionPolicy != null)
+        {
+            message.VersionPolicy = VersionPolicy.Value;
         }
 
-        if (content != null)
+        if (Content != null)
         {
-            message.Content = content();
+            message.Content = Content();
+            if (ExpectContinue)
+            {
+                message.Headers.ExpectContinue = true;
+            }
         }
 
-        foreach (var (name, values) in headers)
+        foreach (var (name, values) in Headers)
         {
             if (message.Headers.TryAddWithoutValidation(name, values))
             {

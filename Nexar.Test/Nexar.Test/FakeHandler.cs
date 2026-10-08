@@ -47,7 +47,11 @@ public sealed class FakeHandler : HttpMessageHandler
             request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase),
             request.Content?.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase)
                 ?? new Dictionary<string, string>(),
-            body));
+            body)
+        {
+            Version = request.Version,
+            VersionPolicy = request.VersionPolicy
+        });
 
         var response = await _respond(request, cancellationToken);
         response.RequestMessage ??= request;
@@ -60,7 +64,12 @@ public sealed record RecordedRequest(
     Uri Url,
     Dictionary<string, string> Headers,
     Dictionary<string, string> ContentHeaders,
-    string? Body);
+    string? Body)
+{
+    public Version Version { get; init; } = new(1, 1);
+
+    public HttpVersionPolicy VersionPolicy { get; init; }
+}
 
 public static class TestClient
 {
