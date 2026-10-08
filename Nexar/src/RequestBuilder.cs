@@ -696,9 +696,20 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Sets an <c>Idempotency-Key</c> header (a new GUID unless <paramref name="key"/> is given) and makes the request
+    /// <see cref="Retryable"/>. The key is fixed when this is called, so every attempt carries the same one and the
+    /// server can deduplicate a POST that is retried.
+    /// </summary>
+    public RequestBuilder IdempotencyKey(string? key = null, string headerName = "Idempotency-Key")
+    {
+        Header(headerName, key ?? Guid.NewGuid().ToString());
+        return Retryable();
+    }
+
+    /// <summary>
     /// Allows (or forbids) retrying this request after a timeout or a transient status.
     /// By default only idempotent methods are retried; opt a <c>POST</c> or <c>PATCH</c> in when the server
-    /// deduplicates it, for example with an <c>Idempotency-Key</c> header.
+    /// deduplicates it, for example with an <c>Idempotency-Key</c> header (see <see cref="IdempotencyKey"/>).
     /// </summary>
     public RequestBuilder Retryable(bool retryable = true)
     {

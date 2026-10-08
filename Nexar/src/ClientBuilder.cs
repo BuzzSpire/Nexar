@@ -630,14 +630,55 @@ public sealed class ClientBuilder
     /// <param name="delay">Delay before the first retry. Defaults to 1 second.</param>
     /// <param name="exponentialBackoff">Doubles the delay after each retry.</param>
     /// <param name="maxDelay">Upper bound for any single delay. Defaults to 30 seconds.</param>
-    public ClientBuilder Retry(int maxRetries, TimeSpan? delay = null, bool exponentialBackoff = true, TimeSpan? maxDelay = null)
+    /// <param name="jitter">
+    /// Waits a random time between zero and the computed backoff ("full jitter"), so many clients recovering from
+    /// the same outage do not retry in lockstep. A <c>Retry-After</c> delay is used as given.
+    /// </param>
+    public ClientBuilder Retry(int maxRetries, TimeSpan? delay = null, bool exponentialBackoff = true, TimeSpan? maxDelay = null, bool jitter = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetries);
         var retryDelay = delay ?? TimeSpan.FromSeconds(1);
         ArgumentOutOfRangeException.ThrowIfLessThan(retryDelay, TimeSpan.Zero, nameof(delay));
         var retryMaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
         ArgumentOutOfRangeException.ThrowIfLessThan(retryMaxDelay, TimeSpan.Zero, nameof(maxDelay));
-        _retry = new RetryPolicy(maxRetries, retryDelay, exponentialBackoff, retryMaxDelay);
+        _retry = _retry with
+        {
+            MaxRetries = maxRetries,
+            Delay = retryDelay,
+            ExponentialBackoff = exponentialBackoff,
+            MaxDelay = retryMaxDelay,
+            Jitter = jitter
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Changes which failed attempts are retried. Return <c>true</c> to retry, <c>false</c> to never retry,
+    /// or <c>null</c> to keep Nexar's decision (<see cref="RetryContext.RetriedByDefault"/>).
+    /// Applies when <see cref="Retry"/> is configured. Non-idempotent requests are still only retried when they
+    /// use <see cref="RequestBuilder.Retryable"/> or <see cref="RequestBuilder.IdempotencyKey"/>, or when the
+    /// connection failed.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .RetryWhen(ctx => ctx.Response?.StatusCode == HttpStatusCode.Conflict ? true : null)
+    /// </code>
+    /// </example>
+    public ClientBuilder RetryWhen(Func<RetryContext, bool?> condition)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        _retry = _retry with { Condition = condition };
+        return this;
+    }
+
+    /// <summary>
+    /// Calls <paramref name="callback"/> before every re-send (retries and the re-send after a <c>401</c>),
+    /// e.g. to log or count them. Exceptions from the callback are logged and ignored.
+    /// </summary>
+    public ClientBuilder OnRetry(Action<RetryEvent> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        _retry = _retry with { Callbacks = [.. _retry.Callbacks, callback] };
         return this;
     }
 

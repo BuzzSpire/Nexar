@@ -3,6 +3,12 @@
 All notable changes to Nexar are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N` counting additional releases on the same day.
 
+## [Unreleased]
+
+### Added
+
+- Retry jitter (`Retry(..., jitter: true)`), custom retry conditions (`RetryWhen`), a retry callback (`OnRetry`) and `IdempotencyKey()` for safely retried POSTs.
+
 ## [2026.1008.0] - 2026-10-08
 
 A complete rewrite with a fluent API modeled after Rust's reqwest. **This release is not compatible with earlier versions**; see [Migrating from 2026.3001.1 and earlier](README.md#migrating-from-202630011-and-earlier).

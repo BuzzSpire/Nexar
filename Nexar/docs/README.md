@@ -106,7 +106,7 @@ var client = new NexarClient();   // all defaults
 | `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)` | Sent with every request. A request header with the same name replaces it. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
 | `QueryStyle(arrays, nested)` | How `Query(object)` and `Form(object)` encode arrays and nested objects. |
-| `Retry(maxRetries, delay, exponentialBackoff, maxDelay)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |
+| `Retry(maxRetries, delay, exponentialBackoff, maxDelay, jitter)`, `RetryWhen(ctx => ...)`, `OnRetry(e => ...)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |
 | `Auth(authenticator)`, `Credentials(ICredentials)` | See [Authentication](#authentication). |
 | `Cache(cache)` | See [Caching](#caching). |
 | `RateLimit(limiter)` | Waits for a `System.Threading.RateLimiting` permit before every attempt. A refused permit throws `ErrorKind.RateLimited`. |
@@ -141,7 +141,7 @@ var matches = await client.Get("/users")
 | Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Body | `Json(value)`, `Form(...)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream \| HttpContent)`, `Body(() => content)`, `Body(text, Encoding, mediaType)` |
-| Behavior | `Timeout(t)`, `Retryable(bool)`, `Version(version, policy)`, `ExpectContinue()`, `Compress(ContentEncoding)`, `MaxResponseSize(bytes)`, `NoCache()`, `OnlyIfCached()` |
+| Behavior | `Timeout(t)`, `Retryable(bool)`, `IdempotencyKey()`, `Version(version, policy)`, `ExpectContinue()`, `Compress(ContentEncoding)`, `MaxResponseSize(bytes)`, `NoCache()`, `OnlyIfCached()` |
 | Progress | `UploadProgress(progress)`, `DownloadProgress(progress)` |
 | Send | `Send(ct)`, `Build()` then `client.Execute(request)`, `TryClone()`, `DownloadTo(path, resume)`, `Paginate<T>()` |
 
@@ -313,6 +313,10 @@ var text = await client.Get("/flaky").Send().ErrorForStatus().Text();
 - **Which methods:** only idempotent ones (`GET`, `HEAD`, `OPTIONS`, `TRACE`, `PUT`, `DELETE`, `QUERY`), so a `POST` is never sent twice. The exception is a failed connection, which never reached the server. Opt a request in with `.Retryable()`, typically with an idempotency key, or out with `.Retryable(false)`.
 - **`Retry-After`:** replaces the computed delay. If it asks for more than `maxDelay` (default 30 s), you get that response back.
 - **Streams:** stream bodies are never re-sent.
+- **Jitter:** `Retry(..., jitter: true)` waits a random time up to the computed backoff, so clients recovering from the same outage do not retry in lockstep.
+- **Custom conditions:** `RetryWhen(ctx => ...)` returns `true` to retry, `false` to veto, or `null` to keep the default. `ctx` carries the attempt, the response or the exception.
+- **Idempotency keys:** `.IdempotencyKey()` sets one `Idempotency-Key` for all attempts and makes a `POST` retryable.
+- **Callbacks:** `OnRetry(e => ...)` is called before every re-send, with the reason and the delay.
 - **Timeouts:** `Timeout()` on the client or the request covers the whole attempt, body included. `ConnectTimeout()` limits connecting separately.
 
 ## Authentication

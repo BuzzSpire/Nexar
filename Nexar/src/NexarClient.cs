@@ -240,9 +240,9 @@ public sealed partial class NexarClient : IDisposable
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 deadline.Dispose();
-                if (canRetry && request.IsIdempotent)
+                if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: false))
                 {
-                    await ResendAfterAsync(attempts, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, request, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 throw new NexarException(ErrorKind.Timeout, $"Request to {request.Url} timed out.", request.Url, innerException: ex);
@@ -252,9 +252,9 @@ public sealed partial class NexarClient : IDisposable
                 deadline.Dispose();
                 var isConnectError = IsConnectError(ex);
                 // A request that never got a connection never reached the server, so any method is safe to retry.
-                if (canRetry && (request.IsIdempotent || isConnectError))
+                if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: isConnectError))
                 {
-                    await ResendAfterAsync(attempts, isConnectError ? "connect" : "request", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, request, isConnectError ? "connect" : "request", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 var kind = isConnectError ? ErrorKind.Connect : ErrorKind.Request;
@@ -290,17 +290,18 @@ public sealed partial class NexarClient : IDisposable
                 reauthenticated = true;
                 response.Dispose();
                 deadline.Dispose();
-                await ResendAfterAsync(attempts, "unauthorized", TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
+                await ResendAfterAsync(attempts, request, "unauthorized", TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            if (canRetry && request.IsIdempotent && IsTransientStatus(response.StatusCode)
+            if (canRetry && (int)response.StatusCode >= 300
+                && ShouldRetry(request, attempt, response, exception: null, IsTransientStatus(response.StatusCode), alwaysSafe: false)
                 && RetryDelay(attempt, response) is { } delay)
             {
                 var reason = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 response.Dispose();
                 deadline.Dispose();
-                await ResendAfterAsync(attempts, reason, delay, cancellationToken).ConfigureAwait(false);
+                await ResendAfterAsync(attempts, request, reason, delay, cancellationToken).ConfigureAwait(false);
                 attempt++;
                 continue;
             }
@@ -316,9 +317,20 @@ public sealed partial class NexarClient : IDisposable
     /// <summary>
     /// Records a re-send (span event, metric, debug log) and waits <paramref name="delay"/>.
     /// </summary>
-    private async Task ResendAfterAsync(AttemptState attempts, string reason, TimeSpan delay, CancellationToken cancellationToken)
+    private async Task ResendAfterAsync(AttemptState attempts, PreparedRequest request, string reason, TimeSpan delay, CancellationToken cancellationToken)
     {
         attempts.Resends++;
+        foreach (var callback in _options.Retry.Callbacks)
+        {
+            try
+            {
+                callback(new RetryEvent(attempts.Resends, reason, delay, request.Method, request.Url));
+            }
+            catch (Exception ex)
+            {
+                _options.Logger.LogWarning(ex, "An OnRetry callback failed");
+            }
+        }
         attempts.Activity?.AddEvent(new ActivityEvent("nexar.resend", tags: new ActivityTagsCollection
         {
             ["nexar.resend.reason"] = reason,
@@ -421,7 +433,23 @@ public sealed partial class NexarClient : IDisposable
     {
         var retry = _options.Retry;
         var milliseconds = retry.Delay.TotalMilliseconds * (retry.ExponentialBackoff ? Math.Pow(2, attempt) : 1);
-        return TimeSpan.FromMilliseconds(Math.Min(milliseconds, retry.MaxDelay.TotalMilliseconds));
+        milliseconds = Math.Min(milliseconds, retry.MaxDelay.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(retry.Jitter ? Random.Shared.NextDouble() * milliseconds : milliseconds);
+    }
+
+    /// <summary>
+    /// Combines Nexar's default decision with <see cref="ClientBuilder.RetryWhen"/>. Non-idempotent requests are only
+    /// retried when they opted in, or when the failure is known not to have reached the server.
+    /// </summary>
+    private bool ShouldRetry(PreparedRequest request, int attempt, HttpResponseMessage? response, Exception? exception,
+        bool retriedByDefault, bool alwaysSafe)
+    {
+        var decision = retriedByDefault;
+        if (_options.Retry.Condition is { } condition)
+        {
+            decision = condition(new RetryContext(attempt + 1, request.Method, request.Url, response, exception, retriedByDefault)) ?? retriedByDefault;
+        }
+        return decision && (request.IsIdempotent || alwaysSafe);
     }
 
     /// <summary>
@@ -494,6 +522,14 @@ public sealed partial class NexarClient : IDisposable
 internal sealed record RetryPolicy(int MaxRetries, TimeSpan Delay, bool ExponentialBackoff, TimeSpan MaxDelay)
 {
     public static readonly RetryPolicy None = new(0, TimeSpan.Zero, false, TimeSpan.Zero);
+
+    /// <summary>Spread each computed backoff randomly between zero and its value ("full jitter").</summary>
+    public bool Jitter { get; init; }
+
+    /// <summary>Adds (true) or vetoes (false) retries; null keeps Nexar's decision.</summary>
+    public Func<RetryContext, bool?>? Condition { get; init; }
+
+    public IReadOnlyList<Action<RetryEvent>> Callbacks { get; init; } = [];
 }
 
 /// <summary>
