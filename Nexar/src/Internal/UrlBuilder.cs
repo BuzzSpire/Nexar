@@ -1,10 +1,48 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Nexar;
 
-internal static class UrlBuilder
+internal static partial class UrlBuilder
 {
+    [GeneratedRegex(@"\{([A-Za-z0-9_.\-]+)\}")]
+    private static partial Regex Placeholder();
+
+    /// <summary>
+    /// Replaces <c>{name}</c> placeholders with escaped values. Every placeholder needs a value and every value a placeholder.
+    /// </summary>
+    public static string ExpandPath(string template, IReadOnlyDictionary<string, string> parameters)
+    {
+        var missing = new List<string>();
+        var used = new HashSet<string>(StringComparer.Ordinal);
+
+        var expanded = Placeholder().Replace(template, match =>
+        {
+            var name = match.Groups[1].Value;
+            if (!parameters.TryGetValue(name, out var value))
+            {
+                missing.Add(name);
+                return match.Value;
+            }
+            used.Add(name);
+            return Uri.EscapeDataString(value);
+        });
+
+        if (missing.Count > 0)
+        {
+            throw new NexarException(ErrorKind.Builder, $"No value for path parameter(s) {string.Join(", ", missing.Select(m => $"{{{m}}}"))} in '{template}'.");
+        }
+
+        var unused = parameters.Keys.Where(k => !used.Contains(k)).ToList();
+        if (unused.Count > 0)
+        {
+            throw new NexarException(ErrorKind.Builder, $"Path parameter(s) {string.Join(", ", unused)} have no placeholder in '{template}'.");
+        }
+
+        return expanded;
+    }
+
     public static bool TryParseHttpUrl(string value, [NotNullWhen(true)] out Uri? uri)
     {
         // Uri treats "/path" as an absolute file:// URI on Unix, so the scheme has to be checked.

@@ -18,6 +18,7 @@ public sealed class RequestBuilder
     private readonly string _url;
     private readonly Dictionary<string, List<string>> _headers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<KeyValuePair<string, string>> _query = new();
+    private readonly Dictionary<string, string> _pathParameters = new(StringComparer.Ordinal);
     private Func<HttpContent>? _content;
     private bool _isReplayable = true;
     private TimeSpan? _timeout;
@@ -112,6 +113,23 @@ public sealed class RequestBuilder
     /// Sets <c>Authorization: Basic ...</c>. Shortcut for <c>Auth(Auth.Basic(username, password))</c>.
     /// </summary>
     public RequestBuilder BasicAuth(string username, string? password = null) => Auth(global::Nexar.Auth.Basic(username, password));
+
+    /// <summary>
+    /// Fills the <c>{name}</c> placeholder in the URL with <paramref name="value"/>, escaped as a path segment,
+    /// so values containing <c>/</c>, <c>?</c>, <c>#</c> or spaces cannot change the URL structure.
+    /// </summary>
+    /// <example><c>client.Get("/users/{id}/repos").Path("id", "ada lovelace")</c> sends <c>/users/ada%20lovelace/repos</c>.</example>
+    public RequestBuilder Path(string name, object value)
+    {
+        Capture(() =>
+        {
+            ArgumentException.ThrowIfNullOrEmpty(name);
+            var formatted = ValueEncoder.Format(value)
+                ?? throw new ArgumentNullException(nameof(value), $"Path parameter '{name}' cannot be null.");
+            _pathParameters[name] = formatted;
+        });
+        return this;
+    }
 
     /// <summary>
     /// Adds a query parameter. <c>null</c> values are skipped.
@@ -259,7 +277,8 @@ public sealed class RequestBuilder
             throw new NexarException(ErrorKind.Builder, $"Invalid request: {_error.Message}", innerException: _error);
         }
 
-        var url = UrlBuilder.Build(_client.BaseUrl, _url, _query);
+        var template = _pathParameters.Count == 0 ? _url : UrlBuilder.ExpandPath(_url, _pathParameters);
+        var url = UrlBuilder.Build(_client.BaseUrl, template, _query);
 
         // Request headers replace default headers of the same name, all values included.
         var headers = _client.DefaultHeaders.ToDictionary(

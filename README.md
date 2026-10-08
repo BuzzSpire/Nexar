@@ -69,6 +69,7 @@ var response = await client.Post("/orders")
 |---|---|
 | Headers | `Header(name, value)` (replace), `HeaderAppend(name, value)` (add another value), `Headers(pairs)`. Names must be RFC 9110 tokens and values must not contain CR, LF or other control characters; otherwise `Send()` throws `ErrorKind.Builder`. This makes header injection impossible. |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
+| Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
 | Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `Body(string \| byte[] \| Stream, contentType)` |
 | Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(Version)` |
