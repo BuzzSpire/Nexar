@@ -83,6 +83,45 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Sets <c>Accept</c>, e.g. <c>.Accept("application/json", "text/csv;q=0.5")</c>.
+    /// </summary>
+    public RequestBuilder Accept(params string[] mediaTypes) =>
+        SetParsedHeader("Accept", mediaTypes, v =>
+        {
+            var parsed = MediaTypeWithQualityHeaderValue.Parse(v);
+            // .NET keeps an unparsable q as a plain parameter; it must be a number between 0 and 1.
+            if (parsed.Parameters.Any(p => p.Name.Equals("q", StringComparison.OrdinalIgnoreCase)) && parsed.Quality is null or < 0 or > 1)
+            {
+                throw new FormatException($"'{v}' has an invalid quality value.");
+            }
+            return parsed.ToString();
+        });
+
+    /// <summary>
+    /// Sets <c>Accept-Language</c>, e.g. <c>.AcceptLanguage("tr-TR", "en;q=0.8")</c>.
+    /// </summary>
+    public RequestBuilder AcceptLanguage(params string[] languages) =>
+        SetParsedHeader("Accept-Language", languages, v => StringWithQualityHeaderValue.Parse(v).ToString());
+
+    private RequestBuilder SetParsedHeader(string name, string[] values, Func<string, string> parse)
+    {
+        Capture(() =>
+        {
+            if (values.Length == 0)
+            {
+                throw new ArgumentException($"{name} needs at least one value.", nameof(values));
+            }
+            var formatted = values.Select(parse).ToList();
+            foreach (var value in formatted)
+            {
+                HeaderValidator.Validate(name, value);
+            }
+            _headers[name] = formatted;
+        });
+        return this;
+    }
+
+    /// <summary>
     /// Authenticates this request with <paramref name="authenticator"/> instead of the client's authenticator.
     /// See <see cref="global::Nexar.Auth"/> for built-in schemes.
     /// </summary>

@@ -68,6 +68,7 @@ var response = await client.Post("/orders")
 | Area | Methods |
 |---|---|
 | Headers | `Header(name, value)` (replace), `HeaderAppend(name, value)` (add another value), `Headers(pairs)`. Names must be RFC 9110 tokens and values must not contain CR, LF or other control characters; otherwise `Send()` throws `ErrorKind.Builder`. This makes header injection impossible. |
+| Negotiation | `Accept(mediaTypes...)`, `AcceptLanguage(languages...)` (validated, quality values included) |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
@@ -159,7 +160,9 @@ public sealed class HmacAuth(byte[] key) : IAuthenticator
 using var res = await client.Get("/report").Send();
 
 Console.WriteLine(res.StatusCode);
-Console.WriteLine(res.Headers.ETag);
+Console.WriteLine(res.ETag);                 // typed headers: ContentType, ETag, LastModified,
+Console.WriteLine(res.Location);             // Location (absolute), RetryAfter
+Console.WriteLine(res.Header("X-RateLimit-Remaining"));   // any header, or null
 
 string text  = await res.Text();
 Report data  = await res.Json<Report>();

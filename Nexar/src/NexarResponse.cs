@@ -57,6 +57,42 @@ public sealed class NexarResponse : IDisposable
     /// <summary>The underlying response, for anything Nexar does not expose.</summary>
     public HttpResponseMessage HttpResponseMessage => _response;
 
+    /// <summary>The parsed <c>Content-Type</c>, or null.</summary>
+    public MediaTypeHeaderValue? ContentType => _response.Content.Headers.ContentType;
+
+    /// <summary>The parsed <c>ETag</c>, or null.</summary>
+    public EntityTagHeaderValue? ETag => _response.Headers.ETag;
+
+    /// <summary>The parsed <c>Last-Modified</c>, or null.</summary>
+    public DateTimeOffset? LastModified => _response.Content.Headers.LastModified;
+
+    /// <summary>The <c>Location</c> header resolved against <see cref="Url"/>, or null.</summary>
+    public Uri? Location => _response.Headers.Location is { } location
+        ? (location.IsAbsoluteUri ? location : new Uri(Url, location))
+        : null;
+
+    /// <summary>
+    /// How long the server asks to wait, from <c>Retry-After</c> given in seconds or as a date, or null.
+    /// </summary>
+    public TimeSpan? RetryAfter => _response.Headers.RetryAfter switch
+    {
+        { Delta: { } delta } => delta,
+        { Date: { } date } => date - DateTimeOffset.UtcNow is var wait && wait > TimeSpan.Zero ? wait : TimeSpan.Zero,
+        _ => null
+    };
+
+    /// <summary>
+    /// The value of any response or content header, with multiple values joined by <c>", "</c>; null if missing.
+    /// </summary>
+    public string? Header(string name)
+    {
+        if (_response.Headers.TryGetValues(name, out var values) || _response.Content.Headers.TryGetValues(name, out values))
+        {
+            return string.Join(", ", values);
+        }
+        return null;
+    }
+
     /// <summary>
     /// Throws if the status is 4xx or 5xx; otherwise returns this response.
     /// The exception keeps the start of the error body (<see cref="NexarException.ResponseBody"/>)
