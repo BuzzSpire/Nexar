@@ -377,8 +377,30 @@ var daily = await reports.Get("/reports/daily").Send().ErrorForStatus().Text();
 | `Auth.ApiKeyHeader(name, key)`, `Auth.ApiKeyQuery(name, key)` | API keys (always redacted from logs) |
 | `Auth.Digest(user, password)` | HTTP Digest (RFC 7616): MD5, SHA-256, `-sess` |
 | `Auth.OAuth2ClientCredentials(...)` | OAuth 2.0 client credentials with caching and refresh |
+| `Auth.OAuth2RefreshToken(options)` | Keeps a user access token fresh with the refresh token grant, persisting rotated refresh tokens via `OnTokensRefreshed` |
 | `Auth.Custom((request, ct) => ...)` | Any signing scheme (HMAC, AWS SigV4, ...) |
 | `ClientBuilder.Credentials(...)` | NTLM / Negotiate (Kerberos) via the platform |
+
+For apps that sign users in (desktop, mobile, CLI), `OAuth2` covers the authorization code flow with PKCE:
+
+```csharp
+var pkce = OAuth2.CreatePkce();   // send pkce.Challenge (S256) in the browser sign-in URL
+var tokens = await OAuth2.ExchangeCodeAsync(null, tokenUrl, clientId, code, pkce.Verifier, redirectUri);
+
+var api = NexarClient.Builder()
+    .BaseUrl(apiUrl)
+    .Auth(Auth.OAuth2RefreshToken(new OAuth2RefreshTokenOptions
+    {
+        TokenUrl = tokenUrl,
+        ClientId = clientId,
+        RefreshToken = tokens.RefreshToken!,
+        InitialTokens = tokens,
+        OnTokensRefreshed = (fresh, ct) => secureStore.SaveAsync(fresh.RefreshToken, ct)   // rotated tokens
+    }))
+    .Build();
+```
+
+A rejected refresh token (`invalid_grant`) raises `ErrorKind.Auth`, which means the user has to sign in again.
 
 Set an authenticator on the client with `.Auth(...)` or on one request. A request-level `Auth()`, `NoAuth()`, `BearerAuth()` or an explicit `Authorization` header replaces the client's. After a `401`, the authenticator gets one chance to fix it (Digest challenge, token refresh). The request is then re-sent once, without using up a retry. You can write your own by implementing `IAuthenticator`.
 
