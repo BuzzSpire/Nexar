@@ -333,6 +333,33 @@ await client.Post("/payments")
     .Send();
 ```
 
+## Caching
+
+Give the client a cache, and GET responses are reused following RFC 9111 (as a private cache):
+
+```csharp
+var client = NexarClient.Builder()
+    .BaseUrl("https://api.example.com")
+    .Cache(new MemoryHttpCache(maxSizeBytes: 50_000_000))
+    .Build();
+
+using var res = await client.Get("/catalog").Send();
+Console.WriteLine(res.CacheStatus);   // Miss, Hit, Revalidated, Stale or None
+
+await client.Get("/catalog").NoCache().Send();        // always check with the server
+await client.Get("/catalog").OnlyIfCached().Send();   // never touch the network (504 if not cached)
+```
+
+- **Freshness:** `max-age`, `Expires`, `Age` and `Date`.
+- **Validation:** stale entries are revalidated with `If-None-Match` / `If-Modified-Since`, and a `304` serves the cached body with refreshed headers.
+- **Response directives:** `no-store` is never stored; `no-cache` revalidates every time; `must-revalidate` disables serving stale.
+- **`stale-while-revalidate`:** serves the stale copy at once and refreshes it in the background.
+- **`Vary`:** each variant gets its own entry; `Vary: *` is never stored.
+- **Bypass:** a successful POST/PUT/PATCH/DELETE invalidates the URL. Conditional or ranged requests, and requests with `Cache-Control: no-store`, skip the cache.
+- **Memory:** bodies larger than the cache's `MaxEntryBytes` are streamed through without being buffered.
+
+`MemoryHttpCache` evicts the least recently used entries. Implement `IHttpCache` for a disk or distributed cache.
+
 ## Native AOT and trimming
 
 Nexar is `IsAotCompatible`. Members that use reflection-based JSON are annotated, so trimmed and Native AOT apps get a warning when they use them. Each one has a source-generated counterpart:

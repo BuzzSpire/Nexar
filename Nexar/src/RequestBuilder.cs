@@ -31,6 +31,7 @@ public sealed class RequestBuilder
     private long? _maxResponseSize;
     private IProgress<TransferProgress>? _uploadProgress;
     private IProgress<TransferProgress>? _downloadProgress;
+    private CacheMode _cacheMode;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -73,6 +74,7 @@ public sealed class RequestBuilder
             _maxResponseSize = _maxResponseSize,
             _uploadProgress = _uploadProgress,
             _downloadProgress = _downloadProgress,
+            _cacheMode = _cacheMode,
             _auth = _auth,
             _authOverridden = _authOverridden,
             _retryable = _retryable,
@@ -721,6 +723,26 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// With <see cref="ClientBuilder.Cache"/>: always revalidates with the server instead of serving a cached copy
+    /// (the cached body is still used if the server answers <c>304</c>).
+    /// </summary>
+    public RequestBuilder NoCache()
+    {
+        _cacheMode = CacheMode.Revalidate;
+        return this;
+    }
+
+    /// <summary>
+    /// With <see cref="ClientBuilder.Cache"/>: answers only from a fresh cached copy and never contacts the server;
+    /// without one, the response is <c>504 Gateway Timeout</c> (RFC 9111 <c>only-if-cached</c>).
+    /// </summary>
+    public RequestBuilder OnlyIfCached()
+    {
+        _cacheMode = CacheMode.OnlyIfCached;
+        return this;
+    }
+
+    /// <summary>
     /// Reports upload progress (bytes written to the network) as the body is sent.
     /// </summary>
     /// <example><c>.UploadProgress(new Progress&lt;TransferProgress&gt;(p =&gt; bar.Value = p.Percent ?? 0))</c></example>
@@ -830,6 +852,7 @@ public sealed class RequestBuilder
             Content = content,
             MaxResponseSize = _maxResponseSize ?? defaults.MaxResponseSize,
             DownloadProgress = _downloadProgress,
+            CacheMode = _cacheMode,
             IsReplayable = _isReplayable,
             IsIdempotent = _retryable ?? IsIdempotent(_method),
             Authenticator = authenticator,

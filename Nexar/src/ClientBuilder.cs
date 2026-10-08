@@ -19,6 +19,8 @@ public sealed class ClientBuilder
     private RedirectPolicy _redirects = RedirectPolicy.Default;
     private RequestDefaults _requestDefaults = RequestDefaults.None;
     private System.Threading.RateLimiting.RateLimiter? _rateLimiter;
+    private IHttpCache? _cache;
+    private TimeProvider _cacheClock = TimeProvider.System;
 
     // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
     // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
@@ -359,6 +361,22 @@ public sealed class ClientBuilder
     {
         ArgumentNullException.ThrowIfNull(version);
         _requestDefaults = _requestDefaults with { Version = version, VersionPolicy = policy };
+        return this;
+    }
+
+    /// <summary>
+    /// Caches GET responses in <paramref name="cache"/> following RFC 9111 as a private cache: <c>max-age</c>,
+    /// <c>Expires</c>, <c>Age</c>, <c>no-store</c>, <c>no-cache</c>, <c>must-revalidate</c>, <c>stale-while-revalidate</c>
+    /// and <c>Vary</c>. Stale entries are revalidated with <c>If-None-Match</c> / <c>If-Modified-Since</c>, and a
+    /// <c>304</c> serves the cached body. Successful unsafe requests (POST, PUT, ...) invalidate the URL's entry.
+    /// </summary>
+    /// <param name="cache">Storage, e.g. <c>new MemoryHttpCache()</c>.</param>
+    /// <param name="clock">The clock for freshness; defaults to the system clock. Useful in tests.</param>
+    public ClientBuilder Cache(IHttpCache cache, TimeProvider? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        _cache = cache;
+        _cacheClock = clock ?? TimeProvider.System;
         return this;
     }
 
@@ -751,7 +769,9 @@ public sealed class ClientBuilder
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
             RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
             _requestDefaults,
-            _rateLimiter);
+            _rateLimiter,
+            _cache,
+            _cacheClock);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

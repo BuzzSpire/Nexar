@@ -17,7 +17,7 @@ namespace Nexar;
 /// var user = await client.Get("/users/1").Send().ErrorForStatus().Json&lt;User&gt;();
 /// </code>
 /// </example>
-public sealed class NexarClient : IDisposable
+public sealed partial class NexarClient : IDisposable
 {
     private readonly ClientOptions _options;
 
@@ -143,7 +143,7 @@ public sealed class NexarClient : IDisposable
         string? errorType = null;
         try
         {
-            var response = await SendAsync(request, attempts, cancellationToken).ConfigureAwait(false);
+            var response = await SendThroughCacheAsync(request, attempts, cancellationToken).ConfigureAwait(false);
             status = response.Status;
             if (status >= 400)
             {
@@ -512,7 +512,9 @@ internal sealed record ClientOptions(
     Redactor Redactor,
     int? RedirectLimit,
     RequestDefaults RequestDefaults,
-    System.Threading.RateLimiting.RateLimiter? RateLimiter);
+    System.Threading.RateLimiting.RateLimiter? RateLimiter,
+    IHttpCache? Cache,
+    TimeProvider CacheClock);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

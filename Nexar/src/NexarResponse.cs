@@ -40,6 +40,12 @@ public sealed partial class NexarResponse : IDisposable
     /// <summary>True for a 2xx status.</summary>
     public bool IsSuccess => _response.IsSuccessStatusCode;
 
+    /// <summary>
+    /// How this response relates to the client's cache (<see cref="ClientBuilder.Cache"/>):
+    /// <see cref="Nexar.CacheStatus.Hit"/>, <see cref="Nexar.CacheStatus.Revalidated"/>, <see cref="Nexar.CacheStatus.Miss"/>, ...
+    /// </summary>
+    public CacheStatus CacheStatus { get; internal set; }
+
     /// <summary>True for <c>304 Not Modified</c>, the answer to a conditional request whose cached copy is still valid.</summary>
     public bool IsNotModified => _response.StatusCode == HttpStatusCode.NotModified;
 
