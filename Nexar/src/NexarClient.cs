@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Nexar;
 
@@ -17,42 +19,18 @@ namespace Nexar;
 /// </example>
 public sealed class NexarClient : IDisposable
 {
-    private readonly HttpClient _httpClient;
-    private readonly bool _ownsHttpClient;
-    private readonly TimeSpan _timeout;
-    private readonly RetryPolicy _retry;
+    private readonly ClientOptions _options;
 
     /// <summary>
     /// Creates a client with the default configuration.
     /// </summary>
-    public NexarClient() : this(Builder().Build())
+    public NexarClient() : this(Builder().BuildOptions())
     {
     }
 
-    private NexarClient(NexarClient other)
-        : this(other._httpClient, other._ownsHttpClient, other.BaseUrl, other.DefaultHeaders,
-            other._timeout, other._retry, other.JsonOptions, other.Authenticator)
+    internal NexarClient(ClientOptions options)
     {
-    }
-
-    internal NexarClient(
-        HttpClient httpClient,
-        bool ownsHttpClient,
-        Uri? baseUrl,
-        IReadOnlyDictionary<string, string> defaultHeaders,
-        TimeSpan timeout,
-        RetryPolicy retry,
-        JsonSerializerOptions jsonOptions,
-        IAuthenticator? authenticator)
-    {
-        _httpClient = httpClient;
-        _ownsHttpClient = ownsHttpClient;
-        BaseUrl = baseUrl;
-        DefaultHeaders = defaultHeaders;
-        _timeout = timeout;
-        _retry = retry;
-        JsonOptions = jsonOptions;
-        Authenticator = authenticator;
+        _options = options;
     }
 
     /// <summary>
@@ -61,13 +39,13 @@ public sealed class NexarClient : IDisposable
     public static ClientBuilder Builder() => new();
 
     /// <summary>The base URL relative request URLs are joined to.</summary>
-    public Uri? BaseUrl { get; }
+    public Uri? BaseUrl => _options.BaseUrl;
 
-    internal IReadOnlyDictionary<string, string> DefaultHeaders { get; }
+    internal IReadOnlyDictionary<string, string> DefaultHeaders => _options.DefaultHeaders;
 
-    internal JsonSerializerOptions JsonOptions { get; }
+    internal JsonSerializerOptions JsonOptions => _options.JsonOptions;
 
-    internal IAuthenticator? Authenticator { get; }
+    internal IAuthenticator? Authenticator => _options.Authenticator;
 
     /// <summary>Starts a GET request.</summary>
     public RequestBuilder Get(string url) => Request(HttpMethod.Get, url);
@@ -90,10 +68,102 @@ public sealed class NexarClient : IDisposable
     /// <summary>Starts a request with any HTTP method.</summary>
     public RequestBuilder Request(HttpMethod method, string url) => new(this, method, url);
 
+    /// <summary>
+    /// Sends <paramref name="request"/> with retries and re-authentication, wrapped in a span, metrics and logs.
+    /// </summary>
     internal async Task<NexarResponse> ExecuteAsync(PreparedRequest request, CancellationToken cancellationToken)
     {
-        var maxRetries = request.IsReplayable ? _retry.MaxRetries : 0;
-        var timeout = request.Timeout ?? _timeout;
+        var method = request.Method.Method;
+        var url = request.Url;
+        var redactedUrl = _options.Redactor.RedactUrl(url, request.Authenticator);
+        var tags = new TagList
+        {
+            { "http.request.method", method },
+            { "server.address", url.Host },
+            { "server.port", url.Port },
+            { "url.scheme", url.Scheme }
+        };
+
+        using var activity = Telemetry.ActivitySource.StartActivity(method, ActivityKind.Client);
+        if (activity is { IsAllDataRequested: true })
+        {
+            foreach (var tag in tags)
+            {
+                activity.SetTag(tag.Key, tag.Value);
+            }
+            activity.SetTag("url.full", redactedUrl);
+        }
+
+        Telemetry.ActiveRequests.Add(1, tags);
+        var started = Stopwatch.GetTimestamp();
+        var attempts = new AttemptState(activity, tags, redactedUrl);
+        int? status = null;
+        string? errorType = null;
+        try
+        {
+            var response = await SendAsync(request, attempts, cancellationToken).ConfigureAwait(false);
+            status = response.Status;
+            if (status >= 400)
+            {
+                errorType = status.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            if (_options.Logger.IsEnabled(LogLevel.Information))
+            {
+                _options.Logger.LogInformation("HTTP {Method} {Url} responded {StatusCode} in {ElapsedMs:0.0} ms",
+                    method, redactedUrl, status, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            }
+            return response;
+        }
+        catch (NexarException ex)
+        {
+            errorType = ex.Kind.ToString().ToLowerInvariant();
+            _options.Logger.LogWarning(ex, "HTTP {Method} {Url} failed ({ErrorKind}) after {ElapsedMs:0.0} ms",
+                method, redactedUrl, ex.Kind, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            errorType = "cancelled";
+            throw;
+        }
+        finally
+        {
+            Telemetry.ActiveRequests.Add(-1, tags);
+
+            var durationTags = tags;
+            if (status != null)
+            {
+                durationTags.Add("http.response.status_code", status.Value);
+            }
+            if (errorType != null)
+            {
+                durationTags.Add("error.type", errorType);
+            }
+            Telemetry.RequestDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, durationTags);
+
+            if (activity != null)
+            {
+                if (status != null)
+                {
+                    activity.SetTag("http.response.status_code", status.Value);
+                }
+                if (attempts.Resends > 0)
+                {
+                    activity.SetTag("http.request.resend_count", attempts.Resends);
+                }
+                if (errorType != null)
+                {
+                    activity.SetTag("error.type", errorType);
+                    activity.SetStatus(ActivityStatusCode.Error);
+                }
+            }
+        }
+    }
+
+    private async Task<NexarResponse> SendAsync(PreparedRequest request, AttemptState attempts, CancellationToken cancellationToken)
+    {
+        var maxRetries = request.IsReplayable ? _options.Retry.MaxRetries : 0;
+        var timeout = request.Timeout ?? _options.Timeout;
         var authenticator = request.Authenticator;
         var reauthenticated = false;
         var attempt = 0;
@@ -106,6 +176,7 @@ public sealed class NexarClient : IDisposable
             {
                 await AuthenticateAsync(authenticator, message, request.Url, cancellationToken).ConfigureAwait(false);
             }
+            LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
 
             // The deadline also covers reading the body, so on success it is handed over to the response.
             var deadline = new CancellationTokenSource();
@@ -118,7 +189,7 @@ public sealed class NexarClient : IDisposable
             try
             {
                 using var sendCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-                response = await _httpClient
+                response = await _options.HttpClient
                     .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, sendCts.Token)
                     .ConfigureAwait(false);
             }
@@ -127,7 +198,7 @@ public sealed class NexarClient : IDisposable
                 deadline.Dispose();
                 if (canRetry && request.IsIdempotent)
                 {
-                    await Task.Delay(Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 throw new NexarException(ErrorKind.Timeout, $"Request to {request.Url} timed out.", request.Url, innerException: ex);
@@ -139,7 +210,7 @@ public sealed class NexarClient : IDisposable
                 // A request that never got a connection never reached the server, so any method is safe to retry.
                 if (canRetry && (request.IsIdempotent || isConnectError))
                 {
-                    await Task.Delay(Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, isConnectError ? "connect" : "request", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 var kind = isConnectError ? ErrorKind.Connect : ErrorKind.Request;
@@ -151,6 +222,8 @@ public sealed class NexarClient : IDisposable
                 throw;
             }
 
+            LogHeaders("Response", response.Headers, response.Content.Headers, authenticator);
+
             // One re-send after a 401 if the authenticator can fix it; it does not use up a retry.
             if (response.StatusCode == HttpStatusCode.Unauthorized
                 && authenticator != null
@@ -161,21 +234,65 @@ public sealed class NexarClient : IDisposable
                 reauthenticated = true;
                 response.Dispose();
                 deadline.Dispose();
+                await ResendAfterAsync(attempts, "unauthorized", TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
             if (canRetry && request.IsIdempotent && IsTransientStatus(response.StatusCode)
                 && RetryDelay(attempt, response) is { } delay)
             {
+                var reason = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 response.Dispose();
                 deadline.Dispose();
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await ResendAfterAsync(attempts, reason, delay, cancellationToken).ConfigureAwait(false);
                 attempt++;
                 continue;
             }
 
             return new NexarResponse(response, request.Url, JsonOptions, deadline);
         }
+    }
+
+    /// <summary>
+    /// Records a re-send (span event, metric, debug log) and waits <paramref name="delay"/>.
+    /// </summary>
+    private async Task ResendAfterAsync(AttemptState attempts, string reason, TimeSpan delay, CancellationToken cancellationToken)
+    {
+        attempts.Resends++;
+        attempts.Activity?.AddEvent(new ActivityEvent("nexar.resend", tags: new ActivityTagsCollection
+        {
+            ["nexar.resend.reason"] = reason,
+            ["nexar.resend.count"] = attempts.Resends,
+            ["nexar.resend.delay_ms"] = delay.TotalMilliseconds
+        }));
+
+        var tags = attempts.Tags;
+        tags.Add("nexar.resend.reason", reason);
+        Telemetry.Resends.Add(1, tags);
+
+        if (_options.Logger.IsEnabled(LogLevel.Debug))
+        {
+            _options.Logger.LogDebug("Re-sending {Url} ({Reason}) in {DelayMs:0} ms, resend #{Count}",
+                attempts.RedactedUrl, reason, delay.TotalMilliseconds, attempts.Resends);
+        }
+
+        if (delay > TimeSpan.Zero)
+        {
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private void LogHeaders(string direction, System.Net.Http.Headers.HttpHeaders headers,
+        System.Net.Http.Headers.HttpHeaders? contentHeaders, IAuthenticator? authenticator)
+    {
+        if (!_options.Logger.IsEnabled(LogLevel.Trace))
+        {
+            return;
+        }
+
+        var all = contentHeaders == null ? headers : headers.Concat(contentHeaders);
+        var text = string.Join("; ", all.Select(h => $"{h.Key}: {_options.Redactor.RedactHeader(h.Key, h.Value, authenticator)}"));
+        _options.Logger.LogTrace("{Direction} headers: {Headers}", direction, text);
     }
 
     private static HttpRequestMessage CreateMessage(PreparedRequest request)
@@ -218,8 +335,9 @@ public sealed class NexarClient : IDisposable
 
     private TimeSpan Backoff(int attempt)
     {
-        var milliseconds = _retry.Delay.TotalMilliseconds * (_retry.ExponentialBackoff ? Math.Pow(2, attempt) : 1);
-        return TimeSpan.FromMilliseconds(Math.Min(milliseconds, _retry.MaxDelay.TotalMilliseconds));
+        var retry = _options.Retry;
+        var milliseconds = retry.Delay.TotalMilliseconds * (retry.ExponentialBackoff ? Math.Pow(2, attempt) : 1);
+        return TimeSpan.FromMilliseconds(Math.Min(milliseconds, retry.MaxDelay.TotalMilliseconds));
     }
 
     /// <summary>
@@ -240,7 +358,7 @@ public sealed class NexarClient : IDisposable
         {
             requested = TimeSpan.Zero;
         }
-        return requested > _retry.MaxDelay ? null : requested;
+        return requested > _options.Retry.MaxDelay ? null : requested;
     }
 
     private static bool IsConnectError(HttpRequestException ex) => ex.HttpRequestError is
@@ -263,10 +381,21 @@ public sealed class NexarClient : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (_ownsHttpClient)
+        if (_options.OwnsHttpClient)
         {
-            _httpClient.Dispose();
+            _options.HttpClient.Dispose();
         }
+    }
+
+    private sealed class AttemptState(Activity? activity, TagList tags, string redactedUrl)
+    {
+        public Activity? Activity { get; } = activity;
+
+        public TagList Tags { get; } = tags;
+
+        public string RedactedUrl { get; } = redactedUrl;
+
+        public int Resends { get; set; }
     }
 }
 
@@ -274,3 +403,18 @@ internal sealed record RetryPolicy(int MaxRetries, TimeSpan Delay, bool Exponent
 {
     public static readonly RetryPolicy None = new(0, TimeSpan.Zero, false, TimeSpan.Zero);
 }
+
+/// <summary>
+/// Everything a <see cref="NexarClient"/> is configured with, produced by <see cref="ClientBuilder"/>.
+/// </summary>
+internal sealed record ClientOptions(
+    HttpClient HttpClient,
+    bool OwnsHttpClient,
+    Uri? BaseUrl,
+    IReadOnlyDictionary<string, string> DefaultHeaders,
+    TimeSpan Timeout,
+    RetryPolicy Retry,
+    JsonSerializerOptions JsonOptions,
+    IAuthenticator? Authenticator,
+    ILogger Logger,
+    Redactor Redactor);

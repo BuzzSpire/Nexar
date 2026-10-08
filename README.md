@@ -50,6 +50,7 @@ var client = new NexarClient();
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
 | `HttpClient(httpClient)` | Uses an existing `HttpClient`, e.g. from `IHttpClientFactory`. Nexar never disposes it. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation. Local development only. |
+| `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | Logging and secret redaction. See [Observability](#observability). |
 
 ## Requests
 
@@ -280,6 +281,22 @@ await client.Post("/payments")
     .Retryable()
     .Send();
 ```
+
+## Observability
+
+Nexar publishes an `ActivitySource` and a `Meter`, both named `Nexar`, following the OpenTelemetry HTTP client semantic conventions:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource("Nexar"))
+    .WithMetrics(m => m.AddMeter("Nexar"));
+```
+
+- **Spans:** one per request, covering retries and re-authentication. Attributes: `http.request.method`, `url.full` (redacted), `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count` and `error.type`. Each re-send is a `nexar.resend` event with its reason (`503`, `timeout`, `connect`, `unauthorized`, ...). 4xx/5xx responses and failures mark the span as an error.
+- **Metrics:** `http.client.request.duration` (s), `http.client.active_requests`, and `nexar.client.resends` tagged by reason. Metrics never carry the URL.
+- **Logs:** with `.Logger(logger)`, the request line, status and duration go out at `Information`, re-sends at `Debug`, failures at `Warning`, and request/response headers at `Trace`.
+
+Secrets are redacted everywhere: the values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and API key headers set through `Auth`, and query parameters such as `api_key`, `access_token`, `token` and `client_secret`. You can add more with `.RedactHeaders(...)` and `.RedactQueryParameters(...)`.
 
 ## Testing
 

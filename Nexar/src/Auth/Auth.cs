@@ -78,7 +78,7 @@ public static class Auth
             request.Headers.Remove(headerName);
             request.Headers.TryAddWithoutValidation(headerName, apiKey);
             return ValueTask.CompletedTask;
-        });
+        }, redactHeaders: [headerName]);
     }
 
     /// <summary>
@@ -96,7 +96,7 @@ public static class Auth
             builder.Query = query.Length == 0 ? pair : $"{query}&{pair}";
             request.RequestUri = builder.Uri;
             return ValueTask.CompletedTask;
-        });
+        }, redactQueryParameters: [parameterName]);
     }
 
     /// <summary>
@@ -151,8 +151,15 @@ public static class Auth
         return new DelegateAuthenticator(apply);
     }
 
-    private sealed class DelegateAuthenticator(Func<HttpRequestMessage, CancellationToken, ValueTask> apply) : IAuthenticator
+    private sealed class DelegateAuthenticator(
+        Func<HttpRequestMessage, CancellationToken, ValueTask> apply,
+        string[]? redactHeaders = null,
+        string[]? redactQueryParameters = null) : IAuthenticator, IRedactionHints
     {
+        public IReadOnlyCollection<string> Headers { get; } = redactHeaders ?? [];
+
+        public IReadOnlyCollection<string> QueryParameters { get; } = redactQueryParameters ?? [];
+
         public ValueTask AuthenticateAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => apply(request, cancellationToken);
     }

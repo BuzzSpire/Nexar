@@ -20,9 +20,43 @@ public sealed class ClientBuilder
     private System.Net.ICredentials? _credentials;
     private bool _preAuthenticate;
     private System.Net.DecompressionMethods? _decompression;
+    private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+    private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
+    private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
 
     internal ClientBuilder()
     {
+    }
+
+    /// <summary>
+    /// Logs requests through <paramref name="logger"/>: the request line, status and duration at Information,
+    /// re-sends at Debug, and headers at Trace. Secrets are redacted (see <see cref="RedactHeaders"/>).
+    /// </summary>
+    public ClientBuilder Logger(Microsoft.Extensions.Logging.ILogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds header names whose values never appear in logs or traces. <c>Authorization</c>, <c>Cookie</c>,
+    /// <c>Set-Cookie</c>, <c>Proxy-Authorization</c> and API key headers set through <see cref="Nexar.Auth"/> are always redacted.
+    /// </summary>
+    public ClientBuilder RedactHeaders(params string[] names)
+    {
+        _redactHeaders.AddRange(names);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds query parameter names whose values are replaced by <c>REDACTED</c> in logs, traces and metrics.
+    /// Common names such as <c>api_key</c>, <c>access_token</c> and <c>client_secret</c> are redacted by default.
+    /// </summary>
+    public ClientBuilder RedactQueryParameters(params string[] names)
+    {
+        _redactQueryParameters.AddRange(names);
+        return this;
     }
 
     /// <summary>
@@ -189,7 +223,9 @@ public sealed class ClientBuilder
     /// Builds the client.
     /// </summary>
     /// <exception cref="NexarException">The configuration is invalid.</exception>
-    public NexarClient Build()
+    public NexarClient Build() => new(BuildOptions());
+
+    internal ClientOptions BuildOptions()
     {
         Uri? baseUrl = null;
         if (_baseUrl != null && !UrlBuilder.TryParseHttpUrl(_baseUrl, out baseUrl))
@@ -235,7 +271,7 @@ public sealed class ClientBuilder
             Timeout = System.Threading.Timeout.InfiniteTimeSpan
         };
 
-        return new NexarClient(
+        return new ClientOptions(
             httpClient,
             ownsHttpClient,
             baseUrl,
@@ -243,7 +279,9 @@ public sealed class ClientBuilder
             _timeout,
             _retry,
             jsonOptions,
-            _authenticator);
+            _authenticator,
+            _logger,
+            new Redactor(_redactHeaders, _redactQueryParameters));
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

@@ -14,6 +14,8 @@ internal sealed class PreparedRequest(
     IAuthenticator? authenticator,
     bool isIdempotent)
 {
+    public HttpMethod Method { get; } = method;
+
     public Uri Url { get; } = url;
 
     /// <summary>Whether timeouts and transient statuses may be retried.</summary>
@@ -27,7 +29,7 @@ internal sealed class PreparedRequest(
 
     public HttpRequestMessage CreateMessage()
     {
-        var message = new HttpRequestMessage(method, Url);
+        var message = new HttpRequestMessage(Method, Url);
         if (version != null)
         {
             message.Version = version;
