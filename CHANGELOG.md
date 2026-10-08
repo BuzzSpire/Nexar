@@ -7,6 +7,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ### Added
 
+- A per-host circuit breaker (`CircuitBreaker(...)`, `ErrorKind.CircuitOpen`).
 - Parallel chunked downloads (`DownloadTo(path, DownloadOptions)`).
 - Request and response hooks (`OnRequest`, `OnResponse`).
 - Streaming request bodies: `JsonLines(IAsyncEnumerable<T>)` (NDJSON) and `JsonStreamed(value)`.

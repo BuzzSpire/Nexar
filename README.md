@@ -122,6 +122,7 @@ Disposing a derived client does not close the pool. Handler settings such as pro
 | `Auth(authenticator)`, `Credentials(ICredentials)` | See [Authentication](#authentication). |
 | `Cache(cache)` | See [Caching](#caching). |
 | `RateLimit(limiter)` | Waits for a `System.Threading.RateLimiting` permit before every attempt. A refused permit throws `ErrorKind.RateLimited`. |
+| `CircuitBreaker(failureRatio, minimumThroughput, samplingDuration, breakDuration)` | Per host: after too many failures (transport errors, 5xx), fail fast with `ErrorKind.CircuitOpen` for a while, then let one probe through. |
 | `MaxResponseSize(bytes)` | Fail with `ErrorKind.Body` instead of buffering huge bodies. No limit by default. |
 | `HttpVersion(version, policy)`, `ExpectContinue()` | Defaults for every request. |
 | `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | See [Observability](#observability). |
@@ -318,6 +319,7 @@ catch (NexarException e) when (e.IsTimeout)
 | `Auth` | Credentials could not be obtained, for example the OAuth token endpoint failed. |
 | `Redirect` | Too many redirects, or a redirect from HTTPS to HTTP. |
 | `RateLimited` | The client-side rate limiter refused the request. `RetryAfter` says how long to wait. |
+| `CircuitOpen` | The circuit breaker for the host is open. `RetryAfter` says when a probe is allowed. |
 
 Cancelling through your own `CancellationToken` throws the usual `OperationCanceledException`, so a timeout and a cancellation never look the same.
 

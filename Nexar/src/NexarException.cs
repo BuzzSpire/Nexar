@@ -38,7 +38,10 @@ public enum ErrorKind
     Redirect,
 
     /// <summary>The client-side rate limiter refused the request (queue full or limit reached).</summary>
-    RateLimited
+    RateLimited,
+
+    /// <summary>The circuit breaker for the host is open, so the request was not sent.</summary>
+    CircuitOpen
 }
 
 /// <summary>
@@ -150,6 +153,12 @@ public sealed class NexarException : Exception
     /// <summary>True if the client-side rate limiter refused the request.</summary>
     public bool IsRateLimited => Kind == ErrorKind.RateLimited;
 
-    /// <summary>For <see cref="ErrorKind.RateLimited"/>: how long the limiter suggests waiting, if it knows.</summary>
+    /// <summary>True if the circuit breaker for the host is open.</summary>
+    public bool IsCircuitOpen => Kind == ErrorKind.CircuitOpen;
+
+    /// <summary>
+    /// For <see cref="ErrorKind.RateLimited"/>: how long the limiter suggests waiting, if it knows.
+    /// For <see cref="ErrorKind.CircuitOpen"/>: the time until the circuit lets a probe through.
+    /// </summary>
     public TimeSpan? RetryAfter { get; internal init; }
 }

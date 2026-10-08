@@ -250,6 +250,8 @@ public sealed partial class NexarClient : IDisposable
             LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
 
             using var lease = await AcquirePermitAsync(request, cancellationToken).ConfigureAwait(false);
+            var circuit = _options.CircuitBreaker;
+            circuit?.Enter(request.Url);
 
             // The deadline also covers reading the body, so on success it is handed over to the response.
             var deadline = new CancellationTokenSource();
@@ -269,6 +271,7 @@ public sealed partial class NexarClient : IDisposable
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 deadline.Dispose();
+                circuit?.Record(request.Url, CircuitOutcome.Failure);
                 if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: false))
                 {
                     await ResendAfterAsync(attempts, request, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
@@ -279,6 +282,7 @@ public sealed partial class NexarClient : IDisposable
             catch (HttpRequestException ex)
             {
                 deadline.Dispose();
+                circuit?.Record(request.Url, CircuitOutcome.Failure);
                 var isConnectError = IsConnectError(ex);
                 // A request that never got a connection never reached the server, so any method is safe to retry.
                 if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: isConnectError))
@@ -292,9 +296,11 @@ public sealed partial class NexarClient : IDisposable
             catch
             {
                 deadline.Dispose();
+                circuit?.Record(request.Url, CircuitOutcome.Neutral);
                 throw;
             }
 
+            circuit?.Record(request.Url, (int)response.StatusCode >= 500 ? CircuitOutcome.Failure : CircuitOutcome.Success);
             LogHeaders("Response", response.Headers, response.Content.Headers, authenticator);
             foreach (var hook in _options.ResponseHooks)
             {
@@ -608,7 +614,8 @@ internal sealed record ClientOptions(
     IReadOnlyList<KeyValuePair<string, string>> DefaultQuery,
     IReadOnlyList<IContentSerializer> Serializers,
     IReadOnlyList<Func<HttpRequestMessage, CancellationToken, ValueTask>> RequestHooks,
-    IReadOnlyList<Func<HttpResponseMessage, CancellationToken, ValueTask>> ResponseHooks);
+    IReadOnlyList<Func<HttpResponseMessage, CancellationToken, ValueTask>> ResponseHooks,
+    CircuitBreaker? CircuitBreaker);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

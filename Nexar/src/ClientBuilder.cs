@@ -41,6 +41,8 @@ public sealed class ClientBuilder
     private readonly List<IContentSerializer> _serializers = new();
     private readonly List<Func<HttpRequestMessage, CancellationToken, ValueTask>> _requestHooks = new();
     private readonly List<Func<HttpResponseMessage, CancellationToken, ValueTask>> _responseHooks = new();
+    private CircuitBreakerSettings? _circuitBreaker;
+    private CircuitBreaker? _inheritedCircuitBreaker;
     private ClientOptions? _parent;
 
     internal ClientBuilder()
@@ -72,6 +74,7 @@ public sealed class ClientBuilder
         }
         builder._defaultQuery.AddRange(parent.DefaultQuery);
         builder._serializers.AddRange(parent.Serializers);
+        builder._inheritedCircuitBreaker = parent.CircuitBreaker;   // same hosts, same circuits
         builder._requestHooks.AddRange(parent.RequestHooks);
         builder._responseHooks.AddRange(parent.ResponseHooks);
         builder._redactHeaders.Clear();
@@ -79,6 +82,33 @@ public sealed class ClientBuilder
         builder._redactQueryParameters.Clear();
         builder._redactQueryParameters.AddRange(parent.Redactor.QueryParameters);
         return builder;
+    }
+
+    /// <summary>
+    /// Fails fast while a host keeps failing, instead of piling up retries and timeouts. Per host, when at least
+    /// <paramref name="minimumThroughput"/> attempts in <paramref name="samplingDuration"/> include a
+    /// <paramref name="failureRatio"/> share of failures (transport errors and 5xx), the circuit opens for
+    /// <paramref name="breakDuration"/>: attempts throw <see cref="ErrorKind.CircuitOpen"/> with
+    /// <see cref="NexarException.RetryAfter"/>. Then one probe is let through; success closes the circuit,
+    /// failure opens it again. State changes are logged and counted in <c>nexar.client.circuit_breaker.transitions</c>.
+    /// </summary>
+    /// <remarks>
+    /// For richer policies, use Polly or <c>Microsoft.Extensions.Http.Resilience</c> through <c>IHttpClientFactory</c>.
+    /// </remarks>
+    public ClientBuilder CircuitBreaker(double failureRatio = 0.5, int minimumThroughput = 20, TimeSpan? samplingDuration = null,
+        TimeSpan? breakDuration = null, TimeProvider? clock = null)
+    {
+        if (failureRatio is <= 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(failureRatio), failureRatio, "The failure ratio must be greater than 0 and at most 1.");
+        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minimumThroughput);
+        var sampling = samplingDuration ?? TimeSpan.FromSeconds(30);
+        var breakFor = breakDuration ?? TimeSpan.FromSeconds(15);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sampling, TimeSpan.Zero, nameof(samplingDuration));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(breakFor, TimeSpan.Zero, nameof(breakDuration));
+        _circuitBreaker = new CircuitBreakerSettings(failureRatio, minimumThroughput, sampling, breakFor, clock ?? TimeProvider.System);
+        return this;
     }
 
     /// <summary>
@@ -987,7 +1017,8 @@ public sealed class ClientBuilder
             _defaultQuery.ToList(),
             _serializers.ToList(),
             _requestHooks.ToList(),
-            _responseHooks.ToList());
+            _responseHooks.ToList(),
+            _circuitBreaker is { } circuit ? new CircuitBreaker(circuit, _logger) : _inheritedCircuitBreaker);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

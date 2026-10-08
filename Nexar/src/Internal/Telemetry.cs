@@ -25,6 +25,9 @@ internal static class Telemetry
     public static readonly UpDownCounter<long> ActiveRequests = Meter.CreateUpDownCounter<long>(
         "http.client.active_requests", unit: "{request}", description: "Number of outstanding HTTP client requests.");
 
+    public static readonly Counter<long> CircuitStateChanges = Meter.CreateCounter<long>(
+        "nexar.client.circuit_breaker.transitions", unit: "{transition}", description: "Circuit breaker state changes per host.");
+
     public static readonly Counter<long> Resends = Meter.CreateCounter<long>(
         "nexar.client.resends", unit: "{request}", description: "Number of times a request was sent again (retries and re-authentication).");
 }
