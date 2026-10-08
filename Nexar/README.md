@@ -51,7 +51,7 @@ dotnet add package BuzzSpire.Nexar.Extensions.DependencyInjection   # optional: 
 dotnet add package BuzzSpire.Nexar.Testing                          # optional: MockHttp for tests
 ```
 
-Nexar targets .NET 9, and everything is in the `Nexar` namespace.
+Nexar targets .NET 10 (LTS), and everything is in the `Nexar` namespace.
 
 ## Quick start
 

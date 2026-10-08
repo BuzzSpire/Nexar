@@ -17,6 +17,7 @@ A complete rewrite with a fluent API modeled after Rust's reqwest. **This releas
 - Connections: redirect policy, proxies (HTTP and SOCKS), cookie store, client certificates and custom root CAs, connection pool settings, HTTP/2 and HTTP/3 tuning, Unix sockets, named pipes, DNS overrides.
 - Observability: `ActivitySource` and `Meter` named `Nexar` (OpenTelemetry HTTP conventions), `ILogger` logging, secret redaction.
 - Native AOT and trimming support, with `JsonTypeInfo<T>` overloads.
+- Targets .NET 10 (LTS); .NET 9 support ended in May 2026.
 - New packages: `BuzzSpire.Nexar.Testing` (`MockHttp`) and `BuzzSpire.Nexar.Extensions.DependencyInjection` (`AddNexarClient`).
 
 ### Changed
