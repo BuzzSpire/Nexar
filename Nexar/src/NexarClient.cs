@@ -89,6 +89,15 @@ public sealed class NexarClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Sends a request made with <see cref="RequestBuilder.Build"/>, with retries and authentication like <c>Send()</c>.
+    /// </summary>
+    public Task<NexarResponse> Execute(NexarRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return ExecuteAsync(request.ToPrepared(), cancellationToken);
+    }
+
     /// <summary>Starts an OPTIONS request.</summary>
     public RequestBuilder Options(string url) => Request(HttpMethod.Options, url);
 

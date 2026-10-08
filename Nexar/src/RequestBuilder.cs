@@ -42,6 +42,53 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Builds the request without sending it, so it can be inspected or signed, then sent with
+    /// <see cref="NexarClient.Execute"/>.
+    /// </summary>
+    /// <exception cref="NexarException">The request is invalid (<see cref="ErrorKind.Builder"/>).</exception>
+    public NexarRequest Build() => new(Prepare());
+
+    /// <summary>
+    /// Copies this builder, so a similar request can be sent again with changes. Returns null if the body
+    /// is a stream, which can only be sent once.
+    /// </summary>
+    public RequestBuilder? TryClone()
+    {
+        if (!_isReplayable)
+        {
+            return null;
+        }
+
+        var clone = new RequestBuilder(_client, _method, _url)
+        {
+            _content = _content,
+            _isReplayable = _isReplayable,
+            _timeout = _timeout,
+            _version = _version,
+            _versionPolicy = _versionPolicy,
+            _expectContinue = _expectContinue,
+            _compression = _compression,
+            _maxResponseSize = _maxResponseSize,
+            _uploadProgress = _uploadProgress,
+            _downloadProgress = _downloadProgress,
+            _auth = _auth,
+            _authOverridden = _authOverridden,
+            _retryable = _retryable,
+            _error = _error
+        };
+        foreach (var (name, values) in _headers)
+        {
+            clone._headers[name] = [.. values];
+        }
+        clone._query.AddRange(_query);
+        foreach (var (name, value) in _pathParameters)
+        {
+            clone._pathParameters[name] = value;
+        }
+        return clone;
+    }
+
+    /// <summary>
     /// Sets a header, replacing any previous value with the same name.
     /// <c>Content-*</c> headers are applied to the body.
     /// </summary>

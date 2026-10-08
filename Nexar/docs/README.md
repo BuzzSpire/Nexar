@@ -217,6 +217,17 @@ await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stre
 await body.CopyToAsync(file);
 ```
 
+### Build now, send later
+
+```csharp
+var request = client.Post("/orders").Json(order).Build();    // builder errors are thrown here
+var body = await request.ReadBodyAsync();                      // bytes as they will be sent
+request.SetHeader("X-Signature", Sign(request.Method, request.Url, body));
+using var response = await client.Execute(request);           // retries and auth as with Send()
+
+var again = builder.TryClone()?.Query("page", 2);             // null for stream bodies
+```
+
 ### Streaming and pagination
 
 ```csharp
