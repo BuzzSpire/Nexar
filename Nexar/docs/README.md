@@ -216,7 +216,13 @@ catch (NexarException e) when (e.IsStatus)
 {
     Console.WriteLine(e.ResponseBody);                         // first 64 KB of the error body
     Console.WriteLine(e.ResponseHeaders?["X-Request-Id"][0]);
-    var problem = e.Json<ProblemDetails>();                    // null if the body is not valid JSON
+    var custom = e.Json<MyApiError>();                         // null if the body is not valid JSON
+
+    if (e.Problem is { } problem)                              // RFC 9457 application/problem+json
+    {
+        Console.WriteLine($"{problem.Title}: {problem.Detail} ({problem.Type})");
+        var errors = problem.Extension<Dictionary<string, string[]>>("errors");
+    }
 }
 ```
 

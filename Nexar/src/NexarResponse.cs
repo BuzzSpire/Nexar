@@ -114,7 +114,14 @@ public sealed class NexarResponse : IDisposable
             .Concat(_response.Content.Headers)
             .GroupBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.SelectMany(h => h.Value).ToList(), StringComparer.OrdinalIgnoreCase);
+        var problem = body != null && !truncated && NexarProblemDetails.IsProblemMediaType(ContentType?.MediaType)
+            ? NexarProblemDetails.TryParse(body)
+            : null;
         var message = $"HTTP {Status} ({ReasonPhrase ?? StatusCode.ToString()}) for {Url}";
+        if (problem?.Title != null)
+        {
+            message += $": {problem.Title}";
+        }
         Dispose();
 
         throw new NexarException(ErrorKind.Status, message, Url, StatusCode)
@@ -122,6 +129,7 @@ public sealed class NexarResponse : IDisposable
             ResponseBody = body,
             IsResponseBodyTruncated = truncated,
             ResponseHeaders = headers,
+            Problem = problem,
             JsonOptions = _jsonOptions
         };
     }

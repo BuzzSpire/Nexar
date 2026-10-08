@@ -76,6 +76,11 @@ public sealed class NexarException : Exception
     /// <summary>The error response headers, including content headers. Set by <c>ErrorForStatus()</c>.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>>? ResponseHeaders { get; internal init; }
 
+    /// <summary>
+    /// The RFC 9457 problem document, when the error response was <c>application/problem+json</c>.
+    /// </summary>
+    public NexarProblemDetails? Problem { get; internal init; }
+
     internal JsonSerializerOptions? JsonOptions { get; init; }
 
     /// <summary>
