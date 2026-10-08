@@ -243,6 +243,10 @@ public sealed partial class NexarClient : IDisposable
             {
                 await AuthenticateAsync(authenticator, message, request.Url, cancellationToken).ConfigureAwait(false);
             }
+            foreach (var hook in _options.RequestHooks)
+            {
+                await RunHookAsync(() => hook(message, cancellationToken), "OnRequest", request.Url).ConfigureAwait(false);
+            }
             LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
 
             using var lease = await AcquirePermitAsync(request, cancellationToken).ConfigureAwait(false);
@@ -292,6 +296,19 @@ public sealed partial class NexarClient : IDisposable
             }
 
             LogHeaders("Response", response.Headers, response.Content.Headers, authenticator);
+            foreach (var hook in _options.ResponseHooks)
+            {
+                try
+                {
+                    await RunHookAsync(() => hook(response, cancellationToken), "OnResponse", request.Url).ConfigureAwait(false);
+                }
+                catch
+                {
+                    response.Dispose();
+                    deadline.Dispose();
+                    throw;
+                }
+            }
 
             // The default handler returns the last 3xx when it stops following redirects.
             if (_options.RedirectLimit is { } limit && IsFollowableRedirect(response))
@@ -414,6 +431,18 @@ public sealed partial class NexarClient : IDisposable
         {
             RetryAfter = retryAfter == default ? null : retryAfter
         };
+    }
+
+    private static async ValueTask RunHookAsync(Func<ValueTask> hook, string name, Uri url)
+    {
+        try
+        {
+            await hook().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not NexarException and not OperationCanceledException)
+        {
+            throw new NexarException(ErrorKind.Request, $"An {name} hook failed for {url}: {ex.Message}", url, innerException: ex);
+        }
     }
 
     private static HttpRequestMessage CreateMessage(PreparedRequest request)
@@ -577,7 +606,9 @@ internal sealed record ClientOptions(
     IHttpCache? Cache,
     TimeProvider CacheClock,
     IReadOnlyList<KeyValuePair<string, string>> DefaultQuery,
-    IReadOnlyList<IContentSerializer> Serializers);
+    IReadOnlyList<IContentSerializer> Serializers,
+    IReadOnlyList<Func<HttpRequestMessage, CancellationToken, ValueTask>> RequestHooks,
+    IReadOnlyList<Func<HttpResponseMessage, CancellationToken, ValueTask>> ResponseHooks);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

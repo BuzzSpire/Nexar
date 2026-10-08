@@ -125,6 +125,7 @@ Disposing a derived client does not close the pool. Handler settings such as pro
 | `MaxResponseSize(bytes)` | Fail with `ErrorKind.Body` instead of buffering huge bodies. No limit by default. |
 | `HttpVersion(version, policy)`, `ExpectContinue()` | Defaults for every request. |
 | `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | See [Observability](#observability). |
+| `OnRequest((request, ct) => ...)`, `OnResponse((response, ct) => ...)` | Lightweight hooks run for every attempt (after authentication, and when headers arrive), e.g. computed headers or metrics. |
 | `AddHandler(DelegatingHandler)` | Middleware, run in the order added. |
 | `HttpMessageHandler(handler)`, `HttpClient(httpClient)` | Bring your own handler (tests) or `HttpClient` (`IHttpClientFactory`). Nexar never disposes a client you pass in. |
 | Connection settings | `Redirects`, `Proxy`, `CookieStore`, `ClientCertificate`, `ConnectTimeout`, `UnixSocket`, ... See [Connections](#connections). |

@@ -7,6 +7,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ### Added
 
+- Request and response hooks (`OnRequest`, `OnResponse`).
 - Streaming request bodies: `JsonLines(IAsyncEnumerable<T>)` (NDJSON) and `JsonStreamed(value)`.
 - TLS certificate pinning (`PinCertificate`, `ClientBuilder.ComputePin`).
 - OAuth 2.0 for signed-in users: `OAuth2.CreatePkce()`, `OAuth2.ExchangeCodeAsync()`, `OAuth2.RefreshAsync()` and `Auth.OAuth2RefreshToken()` with refresh token rotation.

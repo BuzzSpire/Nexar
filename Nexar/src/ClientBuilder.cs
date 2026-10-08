@@ -39,6 +39,8 @@ public sealed class ClientBuilder
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
     private readonly List<KeyValuePair<string, string>> _defaultQuery = new();
     private readonly List<IContentSerializer> _serializers = new();
+    private readonly List<Func<HttpRequestMessage, CancellationToken, ValueTask>> _requestHooks = new();
+    private readonly List<Func<HttpResponseMessage, CancellationToken, ValueTask>> _responseHooks = new();
     private ClientOptions? _parent;
 
     internal ClientBuilder()
@@ -70,11 +72,36 @@ public sealed class ClientBuilder
         }
         builder._defaultQuery.AddRange(parent.DefaultQuery);
         builder._serializers.AddRange(parent.Serializers);
+        builder._requestHooks.AddRange(parent.RequestHooks);
+        builder._responseHooks.AddRange(parent.ResponseHooks);
         builder._redactHeaders.Clear();
         builder._redactHeaders.AddRange(parent.Redactor.Headers);
         builder._redactQueryParameters.Clear();
         builder._redactQueryParameters.AddRange(parent.Redactor.QueryParameters);
         return builder;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="hook"/> before every attempt is sent (retries and re-authentication included), after
+    /// authentication, e.g. to add a computed header. Hooks run in the order added; a failing hook raises
+    /// <see cref="ErrorKind.Request"/>. For more control, write a <see cref="DelegatingHandler"/> (<see cref="AddHandler"/>).
+    /// </summary>
+    public ClientBuilder OnRequest(Func<HttpRequestMessage, CancellationToken, ValueTask> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        _requestHooks.Add(hook);
+        return this;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="hook"/> when the headers of every attempt's response arrive, before retries and
+    /// <c>ErrorForStatus()</c> are considered, e.g. to record metrics. Do not read the body here.
+    /// </summary>
+    public ClientBuilder OnResponse(Func<HttpResponseMessage, CancellationToken, ValueTask> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        _responseHooks.Add(hook);
+        return this;
     }
 
     /// <summary>
@@ -958,7 +985,9 @@ public sealed class ClientBuilder
             _cache,
             _cacheClock,
             _defaultQuery.ToList(),
-            _serializers.ToList());
+            _serializers.ToList(),
+            _requestHooks.ToList(),
+            _responseHooks.ToList());
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()
