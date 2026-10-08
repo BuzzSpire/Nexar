@@ -17,7 +17,7 @@ namespace Nexar;
 /// var user = await client.Get("/users/1").Send().ErrorForStatus().Json&lt;User&gt;();
 /// </code>
 /// </example>
-public sealed class NexarClient : IDisposable
+public sealed partial class NexarClient : IDisposable
 {
     private readonly ClientOptions _options;
 
@@ -143,7 +143,7 @@ public sealed class NexarClient : IDisposable
         string? errorType = null;
         try
         {
-            var response = await SendAsync(request, attempts, cancellationToken).ConfigureAwait(false);
+            var response = await SendThroughCacheAsync(request, attempts, cancellationToken).ConfigureAwait(false);
             status = response.Status;
             if (status >= 400)
             {
@@ -219,6 +219,8 @@ public sealed class NexarClient : IDisposable
                 await AuthenticateAsync(authenticator, message, request.Url, cancellationToken).ConfigureAwait(false);
             }
             LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
+
+            using var lease = await AcquirePermitAsync(request, cancellationToken).ConfigureAwait(false);
 
             // The deadline also covers reading the body, so on success it is handed over to the response.
             var deadline = new CancellationTokenSource();
@@ -353,6 +355,30 @@ public sealed class NexarClient : IDisposable
         _options.Logger.LogTrace("{Direction} headers: {Headers}", direction, text);
     }
 
+    /// <summary>
+    /// Waits for a permit from the client's rate limiter, if any. The lease is held while the attempt is sent.
+    /// </summary>
+    private async ValueTask<System.Threading.RateLimiting.RateLimitLease?> AcquirePermitAsync(PreparedRequest request, CancellationToken cancellationToken)
+    {
+        if (_options.RateLimiter is not { } limiter)
+        {
+            return null;
+        }
+
+        var lease = await limiter.AcquireAsync(1, cancellationToken).ConfigureAwait(false);
+        if (lease.IsAcquired)
+        {
+            return lease;
+        }
+
+        lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter);
+        lease.Dispose();
+        throw new NexarException(ErrorKind.RateLimited, $"The client rate limiter refused the request to {request.Url}.", request.Url)
+        {
+            RetryAfter = retryAfter == default ? null : retryAfter
+        };
+    }
+
     private static HttpRequestMessage CreateMessage(PreparedRequest request)
     {
         try
@@ -485,7 +511,10 @@ internal sealed record ClientOptions(
     ILogger Logger,
     Redactor Redactor,
     int? RedirectLimit,
-    RequestDefaults RequestDefaults);
+    RequestDefaults RequestDefaults,
+    System.Threading.RateLimiting.RateLimiter? RateLimiter,
+    IHttpCache? Cache,
+    TimeProvider CacheClock);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

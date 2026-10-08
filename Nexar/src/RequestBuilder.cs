@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -29,6 +31,7 @@ public sealed class RequestBuilder
     private long? _maxResponseSize;
     private IProgress<TransferProgress>? _uploadProgress;
     private IProgress<TransferProgress>? _downloadProgress;
+    private CacheMode _cacheMode;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -71,6 +74,7 @@ public sealed class RequestBuilder
             _maxResponseSize = _maxResponseSize,
             _uploadProgress = _uploadProgress,
             _downloadProgress = _downloadProgress,
+            _cacheMode = _cacheMode,
             _auth = _auth,
             _authOverridden = _authOverridden,
             _retryable = _retryable,
@@ -330,16 +334,29 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
-    /// Adds query parameters from a dictionary, a sequence of key/value pairs,
-    /// or an object whose properties are serialized with the client's JSON options.
-    /// Arrays and nested objects follow <see cref="ClientBuilder.QueryStyle"/>.
+    /// Adds query parameters from key/value pairs, e.g. a <c>Dictionary&lt;string, string&gt;</c>. Safe for Native AOT.
     /// </summary>
+    public RequestBuilder Query(IEnumerable<KeyValuePair<string, string>> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        _query.AddRange(values);
+        return this;
+    }
+
+    /// <summary>
+    /// Adds query parameters from a dictionary or an object whose properties are serialized with the client's
+    /// JSON options. Arrays and nested objects follow <see cref="ClientBuilder.QueryStyle"/>.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Object)]
+    [RequiresDynamicCode(AotMessages.Object)]
     public RequestBuilder Query(object values) => Query(values, _client.QueryStyle);
 
     /// <summary>
     /// Adds query parameters, encoding arrays and nested objects with <paramref name="style"/>,
     /// e.g. <c>.Query(new { ids = new[] { 1, 2 } }, new QueryStyle(ArrayStyle.Comma))</c>.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Object)]
+    [RequiresDynamicCode(AotMessages.Object)]
     public RequestBuilder Query(object values, QueryStyle style)
     {
         Capture(() => _query.AddRange(ValueEncoder.ToPairs(values, _client.JsonOptions, style)));
@@ -349,26 +366,53 @@ public sealed class RequestBuilder
     /// <summary>
     /// Sends <paramref name="value"/> as JSON using the client's JSON options.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
     public RequestBuilder Json<T>(T value)
     {
-        Capture(() =>
-        {
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(value, _client.JsonOptions);
-            SetContent(() => CreateByteContent(bytes, "application/json; charset=utf-8"), isReplayable: true);
-        });
+        Capture(() => SetJsonContent(JsonSerializer.SerializeToUtf8Bytes(value, _client.JsonOptions)));
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> as JSON with source-generated metadata, e.g.
+    /// <c>.Json(order, AppJsonContext.Default.Order)</c>. Safe for trimming and Native AOT.
+    /// </summary>
+    public RequestBuilder Json<T>(T value, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        Capture(() => SetJsonContent(JsonSerializer.SerializeToUtf8Bytes(value, typeInfo)));
+        return this;
+    }
+
+    private void SetJsonContent(byte[] bytes) =>
+        SetContent(() => CreateByteContent(bytes, "application/json; charset=utf-8"), isReplayable: true);
+
+    /// <summary>
+    /// Sends key/value pairs as <c>application/x-www-form-urlencoded</c>. Safe for Native AOT.
+    /// </summary>
+    public RequestBuilder Form(IEnumerable<KeyValuePair<string, string>> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        var pairs = values.ToList();
+        SetContent(() => new FormUrlEncodedContent(pairs), isReplayable: true);
         return this;
     }
 
     /// <summary>
     /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>.
-    /// Accepts a dictionary, a sequence of key/value pairs, or an object.
+    /// Accepts a dictionary or an object.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Object)]
+    [RequiresDynamicCode(AotMessages.Object)]
     public RequestBuilder Form(object values) => Form(values, _client.QueryStyle);
 
     /// <summary>
     /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>, encoding arrays and nested
     /// objects with <paramref name="style"/>.
     /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Object)]
+    [RequiresDynamicCode(AotMessages.Object)]
     public RequestBuilder Form(object values, QueryStyle style)
     {
         Capture(() =>
@@ -564,14 +608,41 @@ public sealed class RequestBuilder
     /// Every page is sent with the same headers and authentication.
     /// </summary>
     /// <exception cref="NexarException">A page fails (status, decode, ...).</exception>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
     public IAsyncEnumerable<T> Paginate<T>(CancellationToken cancellationToken = default) =>
         Paginate<List<T>, T>(page => page, cancellationToken);
 
     /// <summary>
-    /// Like <see cref="Paginate{T}"/>, for pages where the items are wrapped, e.g. <c>{ "items": [...] }</c>.
+    /// Like <see cref="Paginate{T}(CancellationToken)"/>, with source-generated metadata for the page,
+    /// e.g. <c>.Paginate(AppJsonContext.Default.ListRepo)</c>. Safe for trimming and Native AOT.
     /// </summary>
-    public async IAsyncEnumerable<TItem> Paginate<TPage, TItem>(Func<TPage, IEnumerable<TItem>> selectItems,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<T> Paginate<T>(JsonTypeInfo<List<T>> pageType, CancellationToken cancellationToken = default) =>
+        Paginate(pageType, page => page, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Paginate{T}(CancellationToken)"/>, for pages where the items are wrapped, e.g. <c>{ "items": [...] }</c>.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public IAsyncEnumerable<TItem> Paginate<TPage, TItem>(Func<TPage, IEnumerable<TItem>> selectItems, CancellationToken cancellationToken = default) =>
+        PaginateCore((response, ct) => response.Json<TPage>(ct), selectItems, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Paginate{TPage, TItem}(Func{TPage, IEnumerable{TItem}}, CancellationToken)"/>, with
+    /// source-generated metadata for the page. Safe for trimming and Native AOT.
+    /// </summary>
+    public IAsyncEnumerable<TItem> Paginate<TPage, TItem>(JsonTypeInfo<TPage> pageType, Func<TPage, IEnumerable<TItem>> selectItems,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(pageType);
+        return PaginateCore((response, ct) => response.Json(pageType, ct), selectItems, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<TItem> PaginateCore<TPage, TItem>(
+        Func<NexarResponse, CancellationToken, Task<TPage>> readPage,
+        Func<TPage, IEnumerable<TItem>> selectItems,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(selectItems);
         var request = Prepare();
@@ -584,7 +655,7 @@ public sealed class RequestBuilder
             using (var response = await _client.ExecuteAsync(request, cancellationToken).ConfigureAwait(false))
             {
                 await response.ErrorForStatus(cancellationToken).ConfigureAwait(false);
-                items = selectItems(await response.Json<TPage>(cancellationToken).ConfigureAwait(false)).ToList();
+                items = selectItems(await readPage(response, cancellationToken).ConfigureAwait(false)).ToList();
                 response.Links.TryGetValue("next", out next);
             }
 
@@ -648,6 +719,26 @@ public sealed class RequestBuilder
         ArgumentNullException.ThrowIfNull(version);
         _version = version;
         _versionPolicy = policy;
+        return this;
+    }
+
+    /// <summary>
+    /// With <see cref="ClientBuilder.Cache"/>: always revalidates with the server instead of serving a cached copy
+    /// (the cached body is still used if the server answers <c>304</c>).
+    /// </summary>
+    public RequestBuilder NoCache()
+    {
+        _cacheMode = CacheMode.Revalidate;
+        return this;
+    }
+
+    /// <summary>
+    /// With <see cref="ClientBuilder.Cache"/>: answers only from a fresh cached copy and never contacts the server;
+    /// without one, the response is <c>504 Gateway Timeout</c> (RFC 9111 <c>only-if-cached</c>).
+    /// </summary>
+    public RequestBuilder OnlyIfCached()
+    {
+        _cacheMode = CacheMode.OnlyIfCached;
         return this;
     }
 
@@ -761,6 +852,7 @@ public sealed class RequestBuilder
             Content = content,
             MaxResponseSize = _maxResponseSize ?? defaults.MaxResponseSize,
             DownloadProgress = _downloadProgress,
+            CacheMode = _cacheMode,
             IsReplayable = _isReplayable,
             IsIdempotent = _retryable ?? IsIdempotent(_method),
             Authenticator = authenticator,

@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -37,6 +39,12 @@ public sealed partial class NexarResponse : IDisposable
 
     /// <summary>True for a 2xx status.</summary>
     public bool IsSuccess => _response.IsSuccessStatusCode;
+
+    /// <summary>
+    /// How this response relates to the client's cache (<see cref="ClientBuilder.Cache"/>):
+    /// <see cref="Nexar.CacheStatus.Hit"/>, <see cref="Nexar.CacheStatus.Revalidated"/>, <see cref="Nexar.CacheStatus.Miss"/>, ...
+    /// </summary>
+    public CacheStatus CacheStatus { get; internal set; }
 
     /// <summary>True for <c>304 Not Modified</c>, the answer to a conditional request whose cached copy is still valid.</summary>
     public bool IsNotModified => _response.StatusCode == HttpStatusCode.NotModified;
@@ -282,7 +290,23 @@ public sealed partial class NexarResponse : IDisposable
     /// Deserializes the body as JSON using the client's JSON options.
     /// </summary>
     /// <exception cref="NexarException">The body is empty, <c>null</c>, or not valid JSON for <typeparamref name="T"/>.</exception>
-    public async Task<T> Json<T>(CancellationToken cancellationToken = default)
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public Task<T> Json<T>(CancellationToken cancellationToken = default) =>
+        JsonCore(bytes => JsonSerializer.Deserialize<T>(bytes, _jsonOptions), cancellationToken);
+
+    /// <summary>
+    /// Deserializes the body as JSON with source-generated metadata, e.g. <c>res.Json(AppJsonContext.Default.User)</c>.
+    /// Safe for trimming and Native AOT.
+    /// </summary>
+    /// <exception cref="NexarException">The body is empty, <c>null</c>, or not valid JSON for <typeparamref name="T"/>.</exception>
+    public Task<T> Json<T>(JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonCore(bytes => JsonSerializer.Deserialize(bytes, typeInfo), cancellationToken);
+    }
+
+    private async Task<T> JsonCore<T>(Func<byte[], T?> deserialize, CancellationToken cancellationToken)
     {
         var bytes = await Bytes(cancellationToken).ConfigureAwait(false);
         if (bytes.Length == 0)
@@ -293,7 +317,7 @@ public sealed partial class NexarResponse : IDisposable
         T? value;
         try
         {
-            value = JsonSerializer.Deserialize<T>(bytes, _jsonOptions);
+            value = deserialize(bytes);
         }
         catch (JsonException ex)
         {

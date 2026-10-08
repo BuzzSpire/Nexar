@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Nexar;
 
@@ -84,7 +86,21 @@ public sealed partial class NexarResponse
     /// Blank lines are skipped. The body is not buffered and the client timeout does not apply.
     /// </summary>
     /// <exception cref="NexarException">A line is not valid JSON for <typeparamref name="T"/> (<see cref="ErrorKind.Decode"/>).</exception>
-    public async IAsyncEnumerable<T> JsonLines<T>([EnumeratorCancellation] CancellationToken cancellationToken = default)
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public IAsyncEnumerable<T> JsonLines<T>(CancellationToken cancellationToken = default) =>
+        JsonLinesCore(line => JsonSerializer.Deserialize<T>(line, _jsonOptions), cancellationToken);
+
+    /// <summary>
+    /// Reads newline-delimited JSON with source-generated metadata. Safe for trimming and Native AOT.
+    /// </summary>
+    public IAsyncEnumerable<T> JsonLines<T>(JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonLinesCore(line => JsonSerializer.Deserialize(line, typeInfo), cancellationToken);
+    }
+
+    private async IAsyncEnumerable<T> JsonLinesCore<T>(Func<string, T?> deserialize, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var reader = await OpenTextReaderAsync(cancellationToken).ConfigureAwait(false);
         var lineNumber = 0;
@@ -99,7 +115,7 @@ public sealed partial class NexarResponse
             T? item;
             try
             {
-                item = JsonSerializer.Deserialize<T>(line, _jsonOptions);
+                item = deserialize(line);
             }
             catch (JsonException ex)
             {
@@ -114,11 +130,25 @@ public sealed partial class NexarResponse
     /// The client timeout does not apply; use the cancellation token.
     /// </summary>
     /// <exception cref="NexarException">The body is not a JSON array of <typeparamref name="T"/> (<see cref="ErrorKind.Decode"/>).</exception>
-    public async IAsyncEnumerable<T> JsonStream<T>([EnumeratorCancellation] CancellationToken cancellationToken = default)
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public IAsyncEnumerable<T> JsonStream<T>(CancellationToken cancellationToken = default) =>
+        JsonStreamCore((body, ct) => JsonSerializer.DeserializeAsyncEnumerable<T>(body, _jsonOptions, ct), cancellationToken);
+
+    /// <summary>
+    /// Reads a JSON array body one element at a time with source-generated metadata. Safe for trimming and Native AOT.
+    /// </summary>
+    public IAsyncEnumerable<T> JsonStream<T>(JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonStreamCore((body, ct) => JsonSerializer.DeserializeAsyncEnumerable(body, typeInfo, ct), cancellationToken);
+    }
+
+    private async IAsyncEnumerable<T> JsonStreamCore<T>(Func<Stream, CancellationToken, IAsyncEnumerable<T?>> deserialize,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await using var body = await Stream(cancellationToken).ConfigureAwait(false);
-        await using var items = JsonSerializer.DeserializeAsyncEnumerable<T>(body, _jsonOptions, cancellationToken)
-            .GetAsyncEnumerator(cancellationToken);
+        await using var items = deserialize(body, cancellationToken).GetAsyncEnumerator(cancellationToken);
         var index = 0;
         while (true)
         {

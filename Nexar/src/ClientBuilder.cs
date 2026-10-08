@@ -18,6 +18,9 @@ public sealed class ClientBuilder
     private IAuthenticator? _authenticator;
     private RedirectPolicy _redirects = RedirectPolicy.Default;
     private RequestDefaults _requestDefaults = RequestDefaults.None;
+    private System.Threading.RateLimiting.RateLimiter? _rateLimiter;
+    private IHttpCache? _cache;
+    private TimeProvider _cacheClock = TimeProvider.System;
 
     // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
     // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
@@ -362,6 +365,43 @@ public sealed class ClientBuilder
     }
 
     /// <summary>
+    /// Caches GET responses in <paramref name="cache"/> following RFC 9111 as a private cache: <c>max-age</c>,
+    /// <c>Expires</c>, <c>Age</c>, <c>no-store</c>, <c>no-cache</c>, <c>must-revalidate</c>, <c>stale-while-revalidate</c>
+    /// and <c>Vary</c>. Stale entries are revalidated with <c>If-None-Match</c> / <c>If-Modified-Since</c>, and a
+    /// <c>304</c> serves the cached body. Successful unsafe requests (POST, PUT, ...) invalidate the URL's entry.
+    /// </summary>
+    /// <param name="cache">Storage, e.g. <c>new MemoryHttpCache()</c>.</param>
+    /// <param name="clock">The clock for freshness; defaults to the system clock. Useful in tests.</param>
+    public ClientBuilder Cache(IHttpCache cache, TimeProvider? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(cache);
+        _cache = cache;
+        _cacheClock = clock ?? TimeProvider.System;
+        return this;
+    }
+
+    /// <summary>
+    /// Waits for a permit from <paramref name="limiter"/> before every attempt (retries included), so the client
+    /// stays within an API's published limits instead of reacting to <c>429</c>s. When the limiter refuses
+    /// (queue full), <c>Send()</c> throws <see cref="ErrorKind.RateLimited"/>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .RateLimit(new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+    /// {
+    ///     TokenLimit = 10, TokensPerPeriod = 10, ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+    ///     QueueLimit = 100, QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+    /// }))
+    /// </code>
+    /// </example>
+    public ClientBuilder RateLimit(System.Threading.RateLimiting.RateLimiter limiter)
+    {
+        ArgumentNullException.ThrowIfNull(limiter);
+        _rateLimiter = limiter;
+        return this;
+    }
+
+    /// <summary>
     /// Sets how <c>Query(object)</c> and <c>Form(object)</c> encode arrays and nested objects,
     /// e.g. <c>.QueryStyle(ArrayStyle.Brackets, NestedStyle.Brackets)</c> for Rails or PHP APIs.
     /// </summary>
@@ -698,7 +738,15 @@ public sealed class ClientBuilder
         }
 
         var jsonOptions = new JsonSerializerOptions(_jsonOptions);
-        jsonOptions.MakeReadOnly(populateMissingResolver: true);
+        // Reflection is only wired in when the app allows it; trimmed/AOT apps pass JsonTypeInfo instead.
+        if (jsonOptions.TypeInfoResolver is null && JsonSerializer.IsReflectionEnabledByDefault)
+        {
+            jsonOptions.TypeInfoResolver = CreateReflectionResolver();
+        }
+        if (jsonOptions.TypeInfoResolver is not null)
+        {
+            jsonOptions.MakeReadOnly();
+        }
 
         var ownsHttpClient = _httpClient == null;
         var httpClient = _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
@@ -720,7 +768,10 @@ public sealed class ClientBuilder
             new Redactor(_redactHeaders, _redactQueryParameters),
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
             RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
-            _requestDefaults);
+            _requestDefaults,
+            _rateLimiter,
+            _cache,
+            _cacheClock);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()
@@ -756,6 +807,13 @@ public sealed class ClientBuilder
         }
         return handler;
     }
+
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "Only called when JsonSerializer.IsReflectionEnabledByDefault is true, a feature switch trimmed apps turn off.")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "Only called when JsonSerializer.IsReflectionEnabledByDefault is true, a feature switch Native AOT apps turn off.")]
+    private static System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver CreateReflectionResolver() =>
+        new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver();
 
     internal static TimeSpan ValidateTimeout(TimeSpan timeout)
     {

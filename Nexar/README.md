@@ -55,6 +55,7 @@ var client = new NexarClient();
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | JSON settings. Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
 | `Retry(maxRetries, delay, exponentialBackoff)` | Retries transient failures. Off by default. |
 | `Auth(authenticator)` | Authenticates every request. See [Authentication](#authentication). |
+| `RateLimit(limiter)` | Waits for a `System.Threading.RateLimiting` permit before every attempt (token bucket, sliding window, concurrency, ...). A refused permit throws `ErrorKind.RateLimited`. |
 | `Credentials(ICredentials)` | NTLM / Negotiate (Kerberos) through the platform handler. |
 | `AddHandler(DelegatingHandler)` | Adds middleware (logging, auth refresh, Polly, ...). Runs in the order added. |
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
@@ -268,6 +269,7 @@ Everything Nexar throws is a `NexarException` with a `Kind`:
 | `Decode` | `Json<T>()` got an empty, `null` or invalid body. |
 | `Auth` | Credentials could not be obtained or applied, e.g. the OAuth token endpoint failed. |
 | `Redirect` | A redirect was not followed: more hops than the `RedirectPolicy` allows, or HTTPS to HTTP. |
+| `RateLimited` | The client-side rate limiter refused the request. `RetryAfter` says how long to wait, if known. |
 
 A 4xx/5xx status is **not** an exception by itself. It is a normal response until you call `ErrorForStatus()`:
 
@@ -331,6 +333,51 @@ await client.Post("/payments")
     .Send();
 ```
 
+## Caching
+
+Give the client a cache, and GET responses are reused following RFC 9111 (as a private cache):
+
+```csharp
+var client = NexarClient.Builder()
+    .BaseUrl("https://api.example.com")
+    .Cache(new MemoryHttpCache(maxSizeBytes: 50_000_000))
+    .Build();
+
+using var res = await client.Get("/catalog").Send();
+Console.WriteLine(res.CacheStatus);   // Miss, Hit, Revalidated, Stale or None
+
+await client.Get("/catalog").NoCache().Send();        // always check with the server
+await client.Get("/catalog").OnlyIfCached().Send();   // never touch the network (504 if not cached)
+```
+
+- **Freshness:** `max-age`, `Expires`, `Age` and `Date`.
+- **Validation:** stale entries are revalidated with `If-None-Match` / `If-Modified-Since`, and a `304` serves the cached body with refreshed headers.
+- **Response directives:** `no-store` is never stored; `no-cache` revalidates every time; `must-revalidate` disables serving stale.
+- **`stale-while-revalidate`:** serves the stale copy at once and refreshes it in the background.
+- **`Vary`:** each variant gets its own entry; `Vary: *` is never stored.
+- **Bypass:** a successful POST/PUT/PATCH/DELETE invalidates the URL. Conditional or ranged requests, and requests with `Cache-Control: no-store`, skip the cache.
+- **Memory:** bodies larger than the cache's `MaxEntryBytes` are streamed through without being buffered.
+
+`MemoryHttpCache` evicts the least recently used entries. Implement `IHttpCache` for a disk or distributed cache.
+
+## Native AOT and trimming
+
+Nexar is `IsAotCompatible`. Members that use reflection-based JSON are annotated, so trimmed and Native AOT apps get a warning when they use them. Each one has a source-generated counterpart:
+
+```csharp
+[JsonSerializable(typeof(User))]
+partial class AppJsonContext : JsonSerializerContext;
+
+var user = await client.Post("/users")
+    .Json(newUser, AppJsonContext.Default.User)                         // instead of .Json(newUser)
+    .Send()
+    .Json(AppJsonContext.Default.User);                                 // instead of .Json<User>()
+
+client.Post("/login").Form(new Dictionary<string, string> { ... });    // key/value pairs instead of an object
+```
+
+The same applies to `JsonLines`, `JsonStream`, `Paginate`, `NexarException.Json` and `NexarProblemDetails.Extension`. `samples/Nexar.AotSmoke` publishes a native binary with warnings as errors and checks these paths.
+
 ## Observability
 
 Nexar publishes an `ActivitySource` and a `Meter`, both named `Nexar`, following the OpenTelemetry HTTP client semantic conventions:
@@ -347,16 +394,55 @@ builder.Services.AddOpenTelemetry()
 
 Secrets are redacted everywhere: the values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and API key headers set through `Auth`, and query parameters such as `api_key`, `access_token`, `token` and `client_secret`. You can add more with `.RedactHeaders(...)` and `.RedactQueryParameters(...)`.
 
-## Testing
+## Dependency injection
 
-Plug in your own handler; no mocking library needed:
+`BuzzSpire.Nexar.Extensions.DependencyInjection` registers clients on top of `IHttpClientFactory`, so handler lifetimes, `AddHttpMessageHandler`, resilience handlers and logging keep working:
 
 ```csharp
-var client = NexarClient.Builder()
-    .BaseUrl("https://api.test")
-    .HttpMessageHandler(new MyFakeHandler())
-    .Build();
+services.AddNexarClient("github", b => b.BaseUrl("https://api.github.com").UserAgent("my-app"))
+    .AddHttpMessageHandler<CorrelationHandler>()
+    .AddStandardResilienceHandler();                    // any IHttpClientBuilder extension
+
+var github = serviceProvider.GetRequiredService<INexarClientFactory>().CreateClient("github");
+
+// Typed clients get a NexarClient in their constructor
+services.AddNexarClient<GitHubClient>((sp, b) => b
+    .BaseUrl("https://api.github.com")
+    .Auth(Auth.Bearer(sp.GetRequiredService<TokenCache>().GetAsync)));
+
+public sealed class GitHubClient(NexarClient http) { /* ... */ }
 ```
+
+Nexar's `Timeout()` applies; the factory client's 100 s default is lifted. Handler-level settings (proxy, cookies, TLS, ...) belong on the `IHttpClientBuilder`, e.g. `ConfigurePrimaryHttpMessageHandler`.
+
+## Testing
+
+The companion package `BuzzSpire.Nexar.Testing` provides a fluent mock handler:
+
+```bash
+dotnet add package BuzzSpire.Nexar.Testing
+```
+
+```csharp
+using Nexar.Testing;
+
+var mock = new MockHttp();
+mock.OnGet("/users/1").RespondJson(new { id = 1, name = "Ada" });
+mock.OnPost("/users").WithJsonBody<User>(u => u.Name == "Ada").Respond(HttpStatusCode.Created);
+mock.OnGet("/flaky").Respond(HttpStatusCode.ServiceUnavailable).Respond(HttpStatusCode.OK).Times(2);
+mock.OnGet("/down").Throws(new HttpRequestException(HttpRequestError.ConnectionError));
+mock.OnGet("/slow").Delay(TimeSpan.FromSeconds(30)).Respond();
+
+using var client = mock.CreateClient(configure: b => b.Retry(1));
+// ... exercise the code under test ...
+
+mock.VerifyAllCalled();                // every route called (the expected number of times)
+var sent = mock.Requests[0];           // method, URL, headers, body, .Json<T>()
+```
+
+Routes match on method, path (a trailing `*` is a wildcard), query, headers, body or a custom predicate. They are tried in order, and successive `Respond` calls form a sequence. An unmatched request throws `MockHttpException`, listing the registered routes.
+
+You can also plug in any `HttpMessageHandler` with `.HttpMessageHandler(handler)`.
 
 ## Migrating from 2.x
 

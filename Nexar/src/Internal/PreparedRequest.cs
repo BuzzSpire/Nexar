@@ -35,6 +35,8 @@ internal sealed record PreparedRequest
 
     public IProgress<TransferProgress>? DownloadProgress { get; init; }
 
+    public CacheMode CacheMode { get; init; }
+
     public HttpRequestMessage CreateMessage()
     {
         var message = new HttpRequestMessage(Method, Url);
@@ -73,4 +75,17 @@ internal sealed record PreparedRequest
 
         return message;
     }
+}
+
+/// <summary>How a request may use the client's cache.</summary>
+internal enum CacheMode
+{
+    /// <summary>Serve fresh entries, revalidate stale ones.</summary>
+    Default,
+
+    /// <summary>Always revalidate with the server (request no-cache).</summary>
+    Revalidate,
+
+    /// <summary>Only serve a fresh entry; never contact the server (request only-if-cached).</summary>
+    OnlyIfCached
 }
