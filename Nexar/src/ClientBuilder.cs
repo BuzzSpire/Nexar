@@ -362,6 +362,16 @@ public sealed class ClientBuilder
     }
 
     /// <summary>
+    /// Sets how <c>Query(object)</c> and <c>Form(object)</c> encode arrays and nested objects,
+    /// e.g. <c>.QueryStyle(ArrayStyle.Brackets, NestedStyle.Brackets)</c> for Rails or PHP APIs.
+    /// </summary>
+    public ClientBuilder QueryStyle(ArrayStyle arrays, NestedStyle nested = NestedStyle.Reject)
+    {
+        _requestDefaults = _requestDefaults with { QueryStyle = new Nexar.QueryStyle(arrays, nested) };
+        return this;
+    }
+
+    /// <summary>
     /// Fails reading a response body with <see cref="ErrorKind.Body"/> if it is larger than <paramref name="maxBytes"/>,
     /// so a misbehaving server cannot exhaust memory. No limit by default. Requests can override it with
     /// <see cref="RequestBuilder.MaxResponseSize"/>.

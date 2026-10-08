@@ -85,7 +85,7 @@ var response = await client.Post("/orders")
 | Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)`; `res.IsPartialContent`, `res.ContentRange` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
-| Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
+| Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary), `Query(object, QueryStyle)`. Arrays: `Repeat` (`ids=1&ids=2`, default), `Brackets` (`ids[]=1`), `Comma` (`ids=1,2`), `Index` (`ids[0]=1`). Nested objects: `Reject` (default), `Brackets` (`a[b]=1`), `Dot` (`a.b=1`). Set a client default with `.QueryStyle(...)`; it applies to `Form(object)` too. |
 | Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream, contentType)`, `Body(string, Encoding, mediaType)`, `Body(() => httpContent)` (fresh content per attempt), `Body(httpContent)` (sent once) |
 | Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)`, `Compress(ContentEncoding.Gzip \| Deflate \| Brotli)`, `MaxResponseSize(bytes)` |
 

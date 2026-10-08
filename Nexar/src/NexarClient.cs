@@ -49,6 +49,8 @@ public sealed class NexarClient : IDisposable
 
     internal RequestDefaults RequestDefaults => _options.RequestDefaults;
 
+    internal QueryStyle QueryStyle => _options.RequestDefaults.QueryStyle;
+
     /// <summary>Starts a GET request.</summary>
     public RequestBuilder Get(string url) => Request(HttpMethod.Get, url);
 
@@ -475,7 +477,12 @@ internal sealed record ClientOptions(
 /// <summary>
 /// Client-wide defaults that individual requests can override.
 /// </summary>
-internal sealed record RequestDefaults(Version? Version, HttpVersionPolicy? VersionPolicy, bool ExpectContinue, long? MaxResponseSize)
+internal sealed record RequestDefaults(
+    Version? Version,
+    HttpVersionPolicy? VersionPolicy,
+    bool ExpectContinue,
+    long? MaxResponseSize,
+    QueryStyle QueryStyle)
 {
-    public static readonly RequestDefaults None = new(null, null, false, null);
+    public static readonly RequestDefaults None = new(null, null, false, null, QueryStyle.Default);
 }

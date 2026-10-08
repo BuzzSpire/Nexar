@@ -283,10 +283,17 @@ public sealed class RequestBuilder
     /// <summary>
     /// Adds query parameters from a dictionary, a sequence of key/value pairs,
     /// or an object whose properties are serialized with the client's JSON options.
+    /// Arrays and nested objects follow <see cref="ClientBuilder.QueryStyle"/>.
     /// </summary>
-    public RequestBuilder Query(object values)
+    public RequestBuilder Query(object values) => Query(values, _client.QueryStyle);
+
+    /// <summary>
+    /// Adds query parameters, encoding arrays and nested objects with <paramref name="style"/>,
+    /// e.g. <c>.Query(new { ids = new[] { 1, 2 } }, new QueryStyle(ArrayStyle.Comma))</c>.
+    /// </summary>
+    public RequestBuilder Query(object values, QueryStyle style)
     {
-        Capture(() => _query.AddRange(ValueEncoder.ToPairs(values, _client.JsonOptions)));
+        Capture(() => _query.AddRange(ValueEncoder.ToPairs(values, _client.JsonOptions, style)));
         return this;
     }
 
@@ -307,11 +314,17 @@ public sealed class RequestBuilder
     /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>.
     /// Accepts a dictionary, a sequence of key/value pairs, or an object.
     /// </summary>
-    public RequestBuilder Form(object values)
+    public RequestBuilder Form(object values) => Form(values, _client.QueryStyle);
+
+    /// <summary>
+    /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>, encoding arrays and nested
+    /// objects with <paramref name="style"/>.
+    /// </summary>
+    public RequestBuilder Form(object values, QueryStyle style)
     {
         Capture(() =>
         {
-            var pairs = ValueEncoder.ToPairs(values, _client.JsonOptions);
+            var pairs = ValueEncoder.ToPairs(values, _client.JsonOptions, style);
             SetContent(() => new FormUrlEncodedContent(pairs), isReplayable: true);
         });
         return this;
