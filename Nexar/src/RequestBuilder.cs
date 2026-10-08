@@ -103,6 +103,48 @@ public sealed class RequestBuilder
     public RequestBuilder AcceptLanguage(params string[] languages) =>
         SetParsedHeader("Accept-Language", languages, v => StringWithQualityHeaderValue.Parse(v).ToString());
 
+    /// <summary>
+    /// Sets <c>If-None-Match</c>: the server answers <c>304 Not Modified</c> if the resource still has one of these ETags.
+    /// Accepts <c>"tag"</c>, <c>W/"tag"</c>, <c>*</c>, or a bare tag, which gets quoted.
+    /// </summary>
+    public RequestBuilder IfNoneMatch(params string[] etags) => SetParsedHeader("If-None-Match", etags, FormatETag);
+
+    /// <summary>
+    /// Sets <c>If-None-Match</c> from a previous response's <see cref="NexarResponse.ETag"/>.
+    /// </summary>
+    public RequestBuilder IfNoneMatch(EntityTagHeaderValue etag) => IfNoneMatch(etag.ToString());
+
+    /// <summary>
+    /// Sets <c>If-Match</c> for optimistic concurrency: the server answers <c>412 Precondition Failed</c>
+    /// if the resource changed.
+    /// </summary>
+    public RequestBuilder IfMatch(params string[] etags) => SetParsedHeader("If-Match", etags, FormatETag);
+
+    /// <summary>
+    /// Sets <c>If-Match</c> from a previous response's <see cref="NexarResponse.ETag"/>.
+    /// </summary>
+    public RequestBuilder IfMatch(EntityTagHeaderValue etag) => IfMatch(etag.ToString());
+
+    /// <summary>
+    /// Sets <c>If-Modified-Since</c> (IMF-fixdate).
+    /// </summary>
+    public RequestBuilder IfModifiedSince(DateTimeOffset date) => Header("If-Modified-Since", date.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Sets <c>If-Unmodified-Since</c> (IMF-fixdate).
+    /// </summary>
+    public RequestBuilder IfUnmodifiedSince(DateTimeOffset date) => Header("If-Unmodified-Since", date.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+
+    private static string FormatETag(string etag)
+    {
+        if (etag == "*")
+        {
+            return etag;
+        }
+        var quoted = etag.StartsWith('"') || etag.StartsWith("W/\"", StringComparison.Ordinal) ? etag : $"\"{etag}\"";
+        return EntityTagHeaderValue.Parse(quoted).ToString();
+    }
+
     private RequestBuilder SetParsedHeader(string name, string[] values, Func<string, string> parse)
     {
         Capture(() =>

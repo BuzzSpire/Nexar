@@ -36,6 +36,9 @@ public sealed class NexarResponse : IDisposable
     /// <summary>True for a 2xx status.</summary>
     public bool IsSuccess => _response.IsSuccessStatusCode;
 
+    /// <summary>True for <c>304 Not Modified</c>, the answer to a conditional request whose cached copy is still valid.</summary>
+    public bool IsNotModified => _response.StatusCode == HttpStatusCode.NotModified;
+
     /// <summary>The reason phrase sent by the server, if any.</summary>
     public string? ReasonPhrase => _response.ReasonPhrase;
 
