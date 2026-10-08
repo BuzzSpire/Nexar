@@ -18,6 +18,7 @@ public sealed class ClientBuilder
     private IAuthenticator? _authenticator;
     private RedirectPolicy _redirects = RedirectPolicy.Default;
     private RequestDefaults _requestDefaults = RequestDefaults.None;
+    private System.Threading.RateLimiting.RateLimiter? _rateLimiter;
 
     // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
     // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
@@ -358,6 +359,27 @@ public sealed class ClientBuilder
     {
         ArgumentNullException.ThrowIfNull(version);
         _requestDefaults = _requestDefaults with { Version = version, VersionPolicy = policy };
+        return this;
+    }
+
+    /// <summary>
+    /// Waits for a permit from <paramref name="limiter"/> before every attempt (retries included), so the client
+    /// stays within an API's published limits instead of reacting to <c>429</c>s. When the limiter refuses
+    /// (queue full), <c>Send()</c> throws <see cref="ErrorKind.RateLimited"/>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .RateLimit(new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
+    /// {
+    ///     TokenLimit = 10, TokensPerPeriod = 10, ReplenishmentPeriod = TimeSpan.FromSeconds(1),
+    ///     QueueLimit = 100, QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+    /// }))
+    /// </code>
+    /// </example>
+    public ClientBuilder RateLimit(System.Threading.RateLimiting.RateLimiter limiter)
+    {
+        ArgumentNullException.ThrowIfNull(limiter);
+        _rateLimiter = limiter;
         return this;
     }
 
@@ -720,7 +742,8 @@ public sealed class ClientBuilder
             new Redactor(_redactHeaders, _redactQueryParameters),
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
             RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
-            _requestDefaults);
+            _requestDefaults,
+            _rateLimiter);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

@@ -55,6 +55,7 @@ var client = new NexarClient();
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | JSON settings. Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
 | `Retry(maxRetries, delay, exponentialBackoff)` | Retries transient failures. Off by default. |
 | `Auth(authenticator)` | Authenticates every request. See [Authentication](#authentication). |
+| `RateLimit(limiter)` | Waits for a `System.Threading.RateLimiting` permit before every attempt (token bucket, sliding window, concurrency, ...). A refused permit throws `ErrorKind.RateLimited`. |
 | `Credentials(ICredentials)` | NTLM / Negotiate (Kerberos) through the platform handler. |
 | `AddHandler(DelegatingHandler)` | Adds middleware (logging, auth refresh, Polly, ...). Runs in the order added. |
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
@@ -268,6 +269,7 @@ Everything Nexar throws is a `NexarException` with a `Kind`:
 | `Decode` | `Json<T>()` got an empty, `null` or invalid body. |
 | `Auth` | Credentials could not be obtained or applied, e.g. the OAuth token endpoint failed. |
 | `Redirect` | A redirect was not followed: more hops than the `RedirectPolicy` allows, or HTTPS to HTTP. |
+| `RateLimited` | The client-side rate limiter refused the request. `RetryAfter` says how long to wait, if known. |
 
 A 4xx/5xx status is **not** an exception by itself. It is a normal response until you call `ErrorForStatus()`:
 

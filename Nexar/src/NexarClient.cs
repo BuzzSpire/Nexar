@@ -220,6 +220,8 @@ public sealed class NexarClient : IDisposable
             }
             LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
 
+            using var lease = await AcquirePermitAsync(request, cancellationToken).ConfigureAwait(false);
+
             // The deadline also covers reading the body, so on success it is handed over to the response.
             var deadline = new CancellationTokenSource();
             if (timeout != Timeout.InfiniteTimeSpan)
@@ -351,6 +353,30 @@ public sealed class NexarClient : IDisposable
         var all = contentHeaders == null ? headers : headers.Concat(contentHeaders);
         var text = string.Join("; ", all.Select(h => $"{h.Key}: {_options.Redactor.RedactHeader(h.Key, h.Value, authenticator)}"));
         _options.Logger.LogTrace("{Direction} headers: {Headers}", direction, text);
+    }
+
+    /// <summary>
+    /// Waits for a permit from the client's rate limiter, if any. The lease is held while the attempt is sent.
+    /// </summary>
+    private async ValueTask<System.Threading.RateLimiting.RateLimitLease?> AcquirePermitAsync(PreparedRequest request, CancellationToken cancellationToken)
+    {
+        if (_options.RateLimiter is not { } limiter)
+        {
+            return null;
+        }
+
+        var lease = await limiter.AcquireAsync(1, cancellationToken).ConfigureAwait(false);
+        if (lease.IsAcquired)
+        {
+            return lease;
+        }
+
+        lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter);
+        lease.Dispose();
+        throw new NexarException(ErrorKind.RateLimited, $"The client rate limiter refused the request to {request.Url}.", request.Url)
+        {
+            RetryAfter = retryAfter == default ? null : retryAfter
+        };
     }
 
     private static HttpRequestMessage CreateMessage(PreparedRequest request)
@@ -485,7 +511,8 @@ internal sealed record ClientOptions(
     ILogger Logger,
     Redactor Redactor,
     int? RedirectLimit,
-    RequestDefaults RequestDefaults);
+    RequestDefaults RequestDefaults,
+    System.Threading.RateLimiting.RateLimiter? RateLimiter);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

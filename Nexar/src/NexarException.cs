@@ -33,7 +33,10 @@ public enum ErrorKind
     Auth,
 
     /// <summary>A redirect was not followed: too many hops, or a redirect from HTTPS to HTTP.</summary>
-    Redirect
+    Redirect,
+
+    /// <summary>The client-side rate limiter refused the request (queue full or limit reached).</summary>
+    RateLimited
 }
 
 /// <summary>
@@ -127,4 +130,10 @@ public sealed class NexarException : Exception
 
     /// <summary>True if a redirect was not followed.</summary>
     public bool IsRedirect => Kind == ErrorKind.Redirect;
+
+    /// <summary>True if the client-side rate limiter refused the request.</summary>
+    public bool IsRateLimited => Kind == ErrorKind.RateLimited;
+
+    /// <summary>For <see cref="ErrorKind.RateLimited"/>: how long the limiter suggests waiting, if it knows.</summary>
+    public TimeSpan? RetryAfter { get; internal init; }
 }
