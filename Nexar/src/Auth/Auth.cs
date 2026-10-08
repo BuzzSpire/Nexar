@@ -52,6 +52,22 @@ public static class Auth
     }
 
     /// <summary>
+    /// <c>Authorization: Bearer {token}</c> with a token provider that can refresh: it is called with
+    /// <c>forceRefresh: false</c> before every request, and with <c>forceRefresh: true</c> once after a
+    /// <c>401</c>, before the request is re-sent. The provider is responsible for caching.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .Auth(Auth.Bearer((forceRefresh, ct) => tokens.GetAccessTokenAsync(forceRefresh, ct)))
+    /// </code>
+    /// </example>
+    public static IAuthenticator Bearer(Func<bool, CancellationToken, ValueTask<string>> tokenProvider)
+    {
+        ArgumentNullException.ThrowIfNull(tokenProvider);
+        return new RefreshingBearerAuthenticator(tokenProvider);
+    }
+
+    /// <summary>
     /// HTTP Basic authentication (RFC 7617).
     /// </summary>
     public static IAuthenticator Basic(string username, string? password = null)
@@ -149,6 +165,30 @@ public static class Auth
     {
         ArgumentNullException.ThrowIfNull(apply);
         return new DelegateAuthenticator(apply);
+    }
+
+    private sealed class RefreshingBearerAuthenticator(Func<bool, CancellationToken, ValueTask<string>> tokenProvider) : IAuthenticator
+    {
+        public async ValueTask AuthenticateAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await GetAsync(forceRefresh: false, cancellationToken).ConfigureAwait(false));
+
+        public async ValueTask<bool> OnUnauthorizedAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        {
+            // Let the provider replace its cached token; the re-send then picks up the new one.
+            await GetAsync(forceRefresh: true, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        private async ValueTask<string> GetAsync(bool forceRefresh, CancellationToken cancellationToken)
+        {
+            var token = await tokenProvider(forceRefresh, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(token))
+            {
+                throw new InvalidOperationException("The bearer token provider returned an empty token.");
+            }
+            HeaderValidator.Validate("Authorization", token);
+            return token;
+        }
     }
 
     private sealed class DelegateAuthenticator(

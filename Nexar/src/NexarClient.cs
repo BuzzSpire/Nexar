@@ -49,6 +49,8 @@ public sealed class NexarClient : IDisposable
 
     internal RequestDefaults RequestDefaults => _options.RequestDefaults;
 
+    internal QueryStyle QueryStyle => _options.RequestDefaults.QueryStyle;
+
     /// <summary>Starts a GET request.</summary>
     public RequestBuilder Get(string url) => Request(HttpMethod.Get, url);
 
@@ -69,6 +71,44 @@ public sealed class NexarClient : IDisposable
 
     /// <summary>Starts a request with any HTTP method.</summary>
     public RequestBuilder Request(HttpMethod method, string url) => new(this, method, url);
+
+    /// <summary>
+    /// Starts a request with a method given by name, e.g. WebDAV's <c>PROPFIND</c> or <c>MKCOL</c>.
+    /// An invalid method name raises <see cref="ErrorKind.Builder"/> at <c>Send()</c>.
+    /// Unknown methods are treated as non-idempotent, so they are not retried unless <see cref="RequestBuilder.Retryable"/> is used.
+    /// </summary>
+    public RequestBuilder Request(string method, string url)
+    {
+        try
+        {
+            return new RequestBuilder(this, new HttpMethod(method), url);
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            return new RequestBuilder(this, HttpMethod.Get, url).Fail(new ArgumentException($"'{method}' is not a valid HTTP method.", nameof(method), ex));
+        }
+    }
+
+    /// <summary>
+    /// Sends a request made with <see cref="RequestBuilder.Build"/>, with retries and authentication like <c>Send()</c>.
+    /// </summary>
+    public Task<NexarResponse> Execute(NexarRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return ExecuteAsync(request.ToPrepared(), cancellationToken);
+    }
+
+    /// <summary>Starts an OPTIONS request.</summary>
+    public RequestBuilder Options(string url) => Request(HttpMethod.Options, url);
+
+    /// <summary>Starts a TRACE request.</summary>
+    public RequestBuilder Trace(string url) => Request(HttpMethod.Trace, url);
+
+    /// <summary>
+    /// Starts a QUERY request: a safe, idempotent request that carries its query in the body
+    /// (IETF draft "The HTTP QUERY Method").
+    /// </summary>
+    public RequestBuilder Query(string url) => Request(RequestBuilder.QueryMethod, url);
 
     /// <summary>
     /// Sends <paramref name="request"/> with retries and re-authentication, wrapped in a span, metrics and logs.
@@ -263,7 +303,11 @@ public sealed class NexarClient : IDisposable
                 continue;
             }
 
-            return new NexarResponse(response, request.Url, JsonOptions, deadline);
+            if (request.DownloadProgress is { } progress)
+            {
+                response.Content = new DownloadProgressContent(response.Content, progress);
+            }
+            return new NexarResponse(response, request.Url, JsonOptions, deadline, request.MaxResponseSize);
         }
     }
 
@@ -446,7 +490,12 @@ internal sealed record ClientOptions(
 /// <summary>
 /// Client-wide defaults that individual requests can override.
 /// </summary>
-internal sealed record RequestDefaults(Version? Version, HttpVersionPolicy? VersionPolicy, bool ExpectContinue)
+internal sealed record RequestDefaults(
+    Version? Version,
+    HttpVersionPolicy? VersionPolicy,
+    bool ExpectContinue,
+    long? MaxResponseSize,
+    QueryStyle QueryStyle)
 {
-    public static readonly RequestDefaults None = new(null, null, false);
+    public static readonly RequestDefaults None = new(null, null, false, null, QueryStyle.Default);
 }

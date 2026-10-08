@@ -46,6 +46,7 @@ var client = new NexarClient();
 | `HttpVersion(version, policy)` | Default HTTP version and fallback policy for all requests, e.g. HTTP/2 or HTTP/3 only. |
 | `ExpectContinue()`, `ExpectContinueTimeout(t)` | Send `Expect: 100-continue` with bodies so servers can reject large uploads early. |
 | `Http2MultipleConnections()`, `Http2KeepAlive(interval, timeout)`, `Http3MultipleConnections()` | HTTP/2 and HTTP/3 connection tuning for high-throughput services. |
+| `MaxResponseSize(bytes)` | Fail with `ErrorKind.Body` instead of buffering huge bodies (`Text`/`Bytes`/`Json`/`SaveTo`). No limit by default. |
 | `Decompression(methods)` | Encodings to ask for and decode. Default: gzip, deflate and Brotli. |
 | `Proxy(url, credentials?)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP(S) or SOCKS proxy; by default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
 | `CookieStore(jar?)` | Keeps `Set-Cookie` cookies and sends them back. Without it the client is stateless. |
@@ -64,7 +65,7 @@ var client = new NexarClient();
 
 ## Requests
 
-Start with `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head` or `Request(method, url)`, then chain:
+Start with `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Trace`, `Query` (the safe QUERY method), or `Request(method, url)` for any other method (`client.Request("PROPFIND", url)`), then chain:
 
 ```csharp
 var response = await client.Post("/orders")
@@ -84,9 +85,9 @@ var response = await client.Post("/orders")
 | Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)`; `res.IsPartialContent`, `res.ContentRange` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
-| Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
-| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| Stream, contentType)`, `Body(string, Encoding, mediaType)` |
-| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)` |
+| Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary), `Query(object, QueryStyle)`. Arrays: `Repeat` (`ids=1&ids=2`, default), `Brackets` (`ids[]=1`), `Comma` (`ids=1,2`), `Index` (`ids[0]=1`). Nested objects: `Reject` (default), `Brackets` (`a[b]=1`), `Dot` (`a.b=1`). Set a client default with `.QueryStyle(...)`; it applies to `Form(object)` too. |
+| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream, contentType)`, `Body(string, Encoding, mediaType)`, `Body(() => httpContent)` (fresh content per attempt), `Body(httpContent)` (sent once) |
+| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)`, `Compress(ContentEncoding.Gzip \| Deflate \| Brotli)`, `MaxResponseSize(bytes)`, `UploadProgress(progress)`, `DownloadProgress(progress)` |
 
 ### Bodies
 
@@ -140,6 +141,7 @@ await client.Get("/health").NoAuth().Send();                            // no cr
 |---|---|
 | `Auth.Bearer(token)` | `Authorization: Bearer ...` with a fixed token |
 | `Auth.Bearer(ct => GetTokenAsync(ct))` | Bearer token fetched before every request |
+| `Auth.Bearer((forceRefresh, ct) => ...)` | Same, plus a forced refresh and one re-send after a `401` |
 | `Auth.Basic(user, password)` | HTTP Basic (RFC 7617) |
 | `Auth.ApiKeyHeader("X-Api-Key", key)` | API key in a header |
 | `Auth.ApiKeyQuery("api_key", key)` | API key in the query string |
@@ -194,6 +196,7 @@ Console.WriteLine(res.StatusCode);
 Console.WriteLine(res.ETag);                 // typed headers: ContentType, ETag, LastModified,
 Console.WriteLine(res.Location);             // Location (absolute), RetryAfter
 Console.WriteLine(res.Header("X-RateLimit-Remaining"));   // any header, or null
+Console.WriteLine(res.Trailers);             // trailing headers, after the body is read
 
 string text  = await res.Text();              // charset from Content-Type, else BOM, else UTF-8
 string old   = await res.Text(Encoding.Latin1); // fallback for bodies without a charset
@@ -214,6 +217,41 @@ var report = await client.Get("/report").Send().ErrorForStatus().Json<Report>();
 await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stream();
 await body.CopyToAsync(file);
 ```
+
+### Build now, send later
+
+```csharp
+var request = client.Post("/orders").Json(order).Build();    // builder errors are thrown here
+var body = await request.ReadBodyAsync();                      // bytes as they will be sent
+request.SetHeader("X-Signature", Sign(request.Method, request.Url, body));
+using var response = await client.Execute(request);           // retries and auth as with Send()
+
+var again = builder.TryClone()?.Query("page", 2);             // null for stream bodies
+```
+
+### Streaming and pagination
+
+```csharp
+// Server-Sent Events (LLM / chat completion endpoints, notification feeds)
+await foreach (var e in client.Post("/v1/chat").Json(request).Send().ErrorForStatus().Events(ct))
+{
+    Console.Write(e.Data);        // e.Event, e.Id, e.Retry
+}
+
+// Newline-delimited JSON
+await foreach (var entry in client.Get("/logs").Send().JsonLines<LogEntry>(ct)) { }
+
+// A huge JSON array, one element at a time
+await foreach (var order in client.Get("/orders/export").Send().JsonStream<Order>(ct)) { }
+
+// Follow Link: <...>; rel="next" across pages, with the same headers and auth
+await foreach (var repo in client.Get("/orgs/x/repos").Paginate<Repo>(ct)) { }
+await foreach (var item in client.Get("/search").Paginate<SearchPage, Item>(page => page.Items, ct)) { }
+
+var next = res.Links["next"];     // parsed Link header
+```
+
+The SSE parser follows the WHATWG rules: multi-line `data:`, comments, `id:` carrying over to later events, and `retry:`. None of these readers buffer the body, and the client timeout does not apply to them, so use the cancellation token. The response is disposed when the enumeration ends, including when you `break` early.
 
 ## Errors
 

@@ -19,62 +19,111 @@ internal static class ValueEncoder
         _ => value.ToString()
     };
 
-    public static List<KeyValuePair<string, string>> ToPairs(object values, JsonSerializerOptions options)
+    /// <summary>
+    /// Flattens a dictionary or object into key/value pairs. Objects go through the client's JSON options,
+    /// so naming policies apply; arrays and nested objects follow <paramref name="style"/>.
+    /// </summary>
+    public static List<KeyValuePair<string, string>> ToPairs(object values, JsonSerializerOptions options, QueryStyle style)
     {
         ArgumentNullException.ThrowIfNull(values);
 
-        switch (values)
+        if (values is IEnumerable<KeyValuePair<string, string>> strings)
         {
-            case IEnumerable<KeyValuePair<string, string>> strings:
-                return strings.ToList();
-            case IEnumerable<KeyValuePair<string, object?>> objects:
-                return objects
-                    .Select(kv => (kv.Key, Value: Format(kv.Value)))
-                    .Where(kv => kv.Value != null)
-                    .Select(kv => new KeyValuePair<string, string>(kv.Key, kv.Value!))
-                    .ToList();
+            return strings.ToList();
         }
 
-        var element = JsonSerializer.SerializeToElement(values, values.GetType(), options);
-        if (element.ValueKind != JsonValueKind.Object)
+        var root = JsonSerializer.SerializeToElement(values, values.GetType(), options);
+        if (root.ValueKind != JsonValueKind.Object)
         {
             throw new ArgumentException($"{values.GetType().Name} must serialize to a JSON object.", nameof(values));
         }
 
         var pairs = new List<KeyValuePair<string, string>>();
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in root.EnumerateObject())
         {
-            if (property.Value.ValueKind == JsonValueKind.Array)
-            {
-                // Arrays become repeated keys: ids=1&ids=2
-                foreach (var item in property.Value.EnumerateArray())
-                {
-                    AddScalar(pairs, property.Name, item);
-                }
-            }
-            else
-            {
-                AddScalar(pairs, property.Name, property.Value);
-            }
+            Encode(pairs, property.Name, property.Value, style);
         }
         return pairs;
     }
 
-    private static void AddScalar(List<KeyValuePair<string, string>> pairs, string name, JsonElement value)
+    private static void Encode(List<KeyValuePair<string, string>> pairs, string key, JsonElement value, QueryStyle style)
     {
-        var text = value.ValueKind switch
+        switch (value.ValueKind)
         {
-            JsonValueKind.Null or JsonValueKind.Undefined => null,
-            JsonValueKind.String => value.GetString(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Number => value.GetRawText(),
-            _ => throw new ArgumentException($"Property '{name}' is a nested {value.ValueKind}; only scalar values and arrays of scalars are supported.")
-        };
+            case JsonValueKind.Object:
+                if (style.Nested == NestedStyle.Reject)
+                {
+                    throw new ArgumentException($"'{key}' is a nested object; set NestedStyle.Brackets or NestedStyle.Dot to encode it.");
+                }
+                foreach (var property in value.EnumerateObject())
+                {
+                    var childKey = style.Nested == NestedStyle.Dot ? $"{key}.{property.Name}" : $"{key}[{property.Name}]";
+                    Encode(pairs, childKey, property.Value, style);
+                }
+                break;
 
-        if (text != null)
-        {
-            pairs.Add(new(name, text));
+            case JsonValueKind.Array:
+                EncodeArray(pairs, key, value, style);
+                break;
+
+            default:
+                if (Scalar(value) is { } text)
+                {
+                    pairs.Add(new(key, text));
+                }
+                break;
         }
     }
+
+    private static void EncodeArray(List<KeyValuePair<string, string>> pairs, string key, JsonElement array, QueryStyle style)
+    {
+        var items = array.EnumerateArray().ToList();
+        var hasComplexItems = items.Any(i => i.ValueKind is JsonValueKind.Object or JsonValueKind.Array);
+        if (hasComplexItems && (style.Nested == NestedStyle.Reject || style.Arrays is ArrayStyle.Comma or ArrayStyle.Repeat))
+        {
+            throw new ArgumentException(
+                $"'{key}' contains objects or arrays; use ArrayStyle.Index or ArrayStyle.Brackets with NestedStyle.Brackets or NestedStyle.Dot.");
+        }
+
+        switch (style.Arrays)
+        {
+            case ArrayStyle.Comma:
+                var joined = string.Join(",", items.Select(Scalar).Where(t => t != null));
+                if (joined.Length > 0)
+                {
+                    pairs.Add(new(key, joined));
+                }
+                break;
+
+            case ArrayStyle.Brackets:
+                foreach (var item in items)
+                {
+                    Encode(pairs, $"{key}[]", item, style);
+                }
+                break;
+
+            case ArrayStyle.Index:
+                for (var i = 0; i < items.Count; i++)
+                {
+                    Encode(pairs, $"{key}[{i}]", items[i], style);
+                }
+                break;
+
+            default:
+                foreach (var item in items)
+                {
+                    Encode(pairs, key, item, style);
+                }
+                break;
+        }
+    }
+
+    private static string? Scalar(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString(),
+        JsonValueKind.True => "true",
+        JsonValueKind.False => "false",
+        JsonValueKind.Number => value.GetRawText(),
+        _ => null
+    };
 }

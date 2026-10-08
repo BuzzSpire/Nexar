@@ -3,7 +3,7 @@ namespace Nexar;
 /// <summary>
 /// A fully built request that can produce a fresh <see cref="HttpRequestMessage"/> for every attempt.
 /// </summary>
-internal sealed class PreparedRequest
+internal sealed record PreparedRequest
 {
     public required HttpMethod Method { get; init; }
 
@@ -29,6 +29,11 @@ internal sealed class PreparedRequest
     public HttpVersionPolicy? VersionPolicy { get; init; }
 
     public bool ExpectContinue { get; init; }
+
+    /// <summary>The largest body Text()/Bytes()/Json()/SaveTo() may read, or null for no limit.</summary>
+    public long? MaxResponseSize { get; init; }
+
+    public IProgress<TransferProgress>? DownloadProgress { get; init; }
 
     public HttpRequestMessage CreateMessage()
     {

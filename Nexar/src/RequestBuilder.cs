@@ -25,6 +25,10 @@ public sealed class RequestBuilder
     private Version? _version;
     private HttpVersionPolicy? _versionPolicy;
     private bool? _expectContinue;
+    private ContentEncoding? _compression;
+    private long? _maxResponseSize;
+    private IProgress<TransferProgress>? _uploadProgress;
+    private IProgress<TransferProgress>? _downloadProgress;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -35,6 +39,53 @@ public sealed class RequestBuilder
         _client = client;
         _method = method;
         _url = url;
+    }
+
+    /// <summary>
+    /// Builds the request without sending it, so it can be inspected or signed, then sent with
+    /// <see cref="NexarClient.Execute"/>.
+    /// </summary>
+    /// <exception cref="NexarException">The request is invalid (<see cref="ErrorKind.Builder"/>).</exception>
+    public NexarRequest Build() => new(Prepare());
+
+    /// <summary>
+    /// Copies this builder, so a similar request can be sent again with changes. Returns null if the body
+    /// is a stream, which can only be sent once.
+    /// </summary>
+    public RequestBuilder? TryClone()
+    {
+        if (!_isReplayable)
+        {
+            return null;
+        }
+
+        var clone = new RequestBuilder(_client, _method, _url)
+        {
+            _content = _content,
+            _isReplayable = _isReplayable,
+            _timeout = _timeout,
+            _version = _version,
+            _versionPolicy = _versionPolicy,
+            _expectContinue = _expectContinue,
+            _compression = _compression,
+            _maxResponseSize = _maxResponseSize,
+            _uploadProgress = _uploadProgress,
+            _downloadProgress = _downloadProgress,
+            _auth = _auth,
+            _authOverridden = _authOverridden,
+            _retryable = _retryable,
+            _error = _error
+        };
+        foreach (var (name, values) in _headers)
+        {
+            clone._headers[name] = [.. values];
+        }
+        clone._query.AddRange(_query);
+        foreach (var (name, value) in _pathParameters)
+        {
+            clone._pathParameters[name] = value;
+        }
+        return clone;
     }
 
     /// <summary>
@@ -281,10 +332,17 @@ public sealed class RequestBuilder
     /// <summary>
     /// Adds query parameters from a dictionary, a sequence of key/value pairs,
     /// or an object whose properties are serialized with the client's JSON options.
+    /// Arrays and nested objects follow <see cref="ClientBuilder.QueryStyle"/>.
     /// </summary>
-    public RequestBuilder Query(object values)
+    public RequestBuilder Query(object values) => Query(values, _client.QueryStyle);
+
+    /// <summary>
+    /// Adds query parameters, encoding arrays and nested objects with <paramref name="style"/>,
+    /// e.g. <c>.Query(new { ids = new[] { 1, 2 } }, new QueryStyle(ArrayStyle.Comma))</c>.
+    /// </summary>
+    public RequestBuilder Query(object values, QueryStyle style)
     {
-        Capture(() => _query.AddRange(ValueEncoder.ToPairs(values, _client.JsonOptions)));
+        Capture(() => _query.AddRange(ValueEncoder.ToPairs(values, _client.JsonOptions, style)));
         return this;
     }
 
@@ -305,11 +363,17 @@ public sealed class RequestBuilder
     /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>.
     /// Accepts a dictionary, a sequence of key/value pairs, or an object.
     /// </summary>
-    public RequestBuilder Form(object values)
+    public RequestBuilder Form(object values) => Form(values, _client.QueryStyle);
+
+    /// <summary>
+    /// Sends <paramref name="values"/> as <c>application/x-www-form-urlencoded</c>, encoding arrays and nested
+    /// objects with <paramref name="style"/>.
+    /// </summary>
+    public RequestBuilder Form(object values, QueryStyle style)
     {
         Capture(() =>
         {
-            var pairs = ValueEncoder.ToPairs(values, _client.JsonOptions);
+            var pairs = ValueEncoder.ToPairs(values, _client.JsonOptions, style);
             SetContent(() => new FormUrlEncodedContent(pairs), isReplayable: true);
         });
         return this;
@@ -374,6 +438,47 @@ public sealed class RequestBuilder
                 return content;
             }, isReplayable: false);
         });
+        return this;
+    }
+
+    /// <summary>
+    /// Sends a binary body from memory, e.g. a pooled buffer. The memory must stay unchanged until the request completes.
+    /// </summary>
+    public RequestBuilder Body(ReadOnlyMemory<byte> data, string contentType = "application/octet-stream")
+    {
+        Capture(() =>
+        {
+            MediaTypeHeaderValue.Parse(contentType);
+            SetContent(() =>
+            {
+                var content = new ReadOnlyMemoryContent(data);
+                content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+                return content;
+            }, isReplayable: true);
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Sends a body created by <paramref name="contentFactory"/>, called once per attempt so every retry gets fresh content.
+    /// </summary>
+    /// <param name="contentFactory">Creates the body, e.g. from another library's serializer.</param>
+    /// <param name="replayable">False if the factory cannot be called twice; the request is then never retried.</param>
+    public RequestBuilder Body(Func<HttpContent> contentFactory, bool replayable = true)
+    {
+        ArgumentNullException.ThrowIfNull(contentFactory);
+        SetContent(contentFactory, replayable);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends a ready-made <see cref="HttpContent"/>. It is disposed after sending, so the request is never retried;
+    /// use <see cref="Body(Func{HttpContent}, bool)"/> for retryable custom content.
+    /// </summary>
+    public RequestBuilder Body(HttpContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        SetContent(() => content, isReplayable: false);
         return this;
     }
 
@@ -453,6 +558,49 @@ public sealed class RequestBuilder
         return new FileInfo(path).Length;
     }
 
+    /// <summary>
+    /// Sends the request and every following page linked with <c>Link: &lt;...&gt;; rel="next"</c> (RFC 8288),
+    /// yielding the items of each page, whose body is a JSON array of <typeparamref name="T"/>.
+    /// Every page is sent with the same headers and authentication.
+    /// </summary>
+    /// <exception cref="NexarException">A page fails (status, decode, ...).</exception>
+    public IAsyncEnumerable<T> Paginate<T>(CancellationToken cancellationToken = default) =>
+        Paginate<List<T>, T>(page => page, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Paginate{T}"/>, for pages where the items are wrapped, e.g. <c>{ "items": [...] }</c>.
+    /// </summary>
+    public async IAsyncEnumerable<TItem> Paginate<TPage, TItem>(Func<TPage, IEnumerable<TItem>> selectItems,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selectItems);
+        var request = Prepare();
+        var visited = new HashSet<Uri>();
+
+        while (visited.Add(request.Url))
+        {
+            Uri? next;
+            List<TItem> items;
+            using (var response = await _client.ExecuteAsync(request, cancellationToken).ConfigureAwait(false))
+            {
+                await response.ErrorForStatus(cancellationToken).ConfigureAwait(false);
+                items = selectItems(await response.Json<TPage>(cancellationToken).ConfigureAwait(false)).ToList();
+                response.Links.TryGetValue("next", out next);
+            }
+
+            foreach (var item in items)
+            {
+                yield return item;
+            }
+
+            if (next == null)
+            {
+                yield break;
+            }
+            request = request with { Url = next };
+        }
+    }
+
     internal static void TryDelete(string path)
     {
         try
@@ -504,6 +652,50 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Reports upload progress (bytes written to the network) as the body is sent.
+    /// </summary>
+    /// <example><c>.UploadProgress(new Progress&lt;TransferProgress&gt;(p =&gt; bar.Value = p.Percent ?? 0))</c></example>
+    public RequestBuilder UploadProgress(IProgress<TransferProgress> progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        _uploadProgress = progress;
+        return this;
+    }
+
+    /// <summary>
+    /// Reports download progress as the response body is read by <c>Text()</c>, <c>Bytes()</c>, <c>Json()</c>,
+    /// <c>SaveTo()</c>, <c>DownloadTo()</c> or <c>Stream()</c>.
+    /// </summary>
+    public RequestBuilder DownloadProgress(IProgress<TransferProgress> progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        _downloadProgress = progress;
+        return this;
+    }
+
+    /// <summary>
+    /// Compresses the body while sending it and sets <c>Content-Encoding</c>, for APIs that accept compressed
+    /// uploads (telemetry, log ingestion, bulk imports). The body stays retryable.
+    /// </summary>
+    public RequestBuilder Compress(ContentEncoding encoding = ContentEncoding.Gzip)
+    {
+        _compression = encoding;
+        return this;
+    }
+
+    /// <summary>
+    /// Fails reading the body with <see cref="ErrorKind.Body"/> if it is larger than <paramref name="maxBytes"/>,
+    /// overriding <see cref="ClientBuilder.MaxResponseSize"/>. Applies to <c>Text()</c>, <c>Bytes()</c>, <c>Json()</c>
+    /// and <c>SaveTo()</c>; <c>Stream()</c> is up to the caller.
+    /// </summary>
+    public RequestBuilder MaxResponseSize(long maxBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxBytes);
+        _maxResponseSize = maxBytes;
+        return this;
+    }
+
+    /// <summary>
     /// Sends <c>Expect: 100-continue</c> with the body, so the server can reject the request (auth, size, quota)
     /// before the body is uploaded. Overrides <see cref="ClientBuilder.ExpectContinue"/>.
     /// </summary>
@@ -548,12 +740,27 @@ public sealed class RequestBuilder
             : _headers.ContainsKey("Authorization") ? null : _client.Authenticator;
 
         var defaults = _client.RequestDefaults;
+        var content = _content;
+        if (content != null && _compression is { } encoding)
+        {
+            var uncompressed = content;
+            content = () => new CompressedContent(uncompressed(), encoding);
+        }
+        if (content != null && _uploadProgress is { } upload)
+        {
+            // Outermost, so it counts the bytes that actually go on the wire.
+            var tracked = content;
+            content = () => new UploadProgressContent(tracked(), upload);
+        }
+
         return new PreparedRequest
         {
             Method = _method,
             Url = url,
             Headers = headers,
-            Content = _content,
+            Content = content,
+            MaxResponseSize = _maxResponseSize ?? defaults.MaxResponseSize,
+            DownloadProgress = _downloadProgress,
             IsReplayable = _isReplayable,
             IsIdempotent = _retryable ?? IsIdempotent(_method),
             Authenticator = authenticator,
@@ -564,9 +771,17 @@ public sealed class RequestBuilder
         };
     }
 
+    internal static readonly HttpMethod QueryMethod = new("QUERY");
+
     private static bool IsIdempotent(HttpMethod method) =>
         method == HttpMethod.Get || method == HttpMethod.Head || method == HttpMethod.Options ||
-        method == HttpMethod.Trace || method == HttpMethod.Put || method == HttpMethod.Delete;
+        method == HttpMethod.Trace || method == HttpMethod.Put || method == HttpMethod.Delete || method == QueryMethod;
+
+    internal RequestBuilder Fail(Exception error)
+    {
+        _error ??= error;
+        return this;
+    }
 
     private void SetContent(Func<HttpContent> content, bool isReplayable)
     {
