@@ -152,7 +152,7 @@ var matches = await client.Get("/users")
 | Conditional | `IfNoneMatch(etag)`, `IfMatch(etag)`, `IfModifiedSince(date)`, `IfUnmodifiedSince(date)` |
 | Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
-| Body | `Json(value)`, `Form(...)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream \| HttpContent)`, `Body(() => content)`, `Body(text, Encoding, mediaType)` |
+| Body | `Json(value)`, `JsonStreamed(value)`, `JsonLines(asyncItems)`, `Form(...)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream \| HttpContent)`, `Body(() => content)`, `Body(text, Encoding, mediaType)` |
 | Behavior | `Timeout(t)`, `Retryable(bool)`, `IdempotencyKey()`, `Version(version, policy)`, `ExpectContinue()`, `Compress(ContentEncoding)`, `MaxResponseSize(bytes)`, `NoCache()`, `OnlyIfCached()` |
 | Progress | `UploadProgress(progress)`, `DownloadProgress(progress)` |
 | Send | `Send(ct)`, `Build()` then `client.Execute(request)`, `TryClone()`, `DownloadTo(path, resume)`, `Paginate<T>()` |
@@ -196,6 +196,7 @@ var upload = await client.Post("/upload")
 - `File(path)` sends a file, with the content type taken from its extension. The file is reopened for every attempt, so the request can be retried.
 - `Body(text, contentType)` encodes the text with the charset named in `contentType`.
 - `Compress(ContentEncoding.Gzip)` compresses the body on the fly.
+- `JsonLines(asyncItems)` streams an `IAsyncEnumerable<T>` as NDJSON while it is produced, and `JsonStreamed(value)` serializes a huge object straight to the network. Neither is buffered.
 - Stream bodies are sent once and never retried.
 
 ### XML and other formats

@@ -428,6 +428,68 @@ public sealed class RequestBuilder
     public RequestBuilder Serialized<T>(T value) =>
         _client.Serializers.Count > 0 ? Body(value, _client.Serializers[0]) : Json(value);
 
+    /// <summary>
+    /// Streams <paramref name="items"/> as newline-delimited JSON (<c>application/x-ndjson</c>) while they are produced,
+    /// so bulk uploads never sit in memory. The sequence can be enumerated only once, so the request is never retried.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder JsonLines<T>(IAsyncEnumerable<T> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var options = _client.JsonOptions;
+        return JsonLinesCore(items, (stream, item, ct) => JsonSerializer.SerializeAsync(stream, item, options, ct));
+    }
+
+    /// <summary>
+    /// Streams <paramref name="items"/> as newline-delimited JSON with source-generated metadata. Safe for Native AOT.
+    /// </summary>
+    public RequestBuilder JsonLines<T>(IAsyncEnumerable<T> items, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonLinesCore(items, (stream, item, ct) => JsonSerializer.SerializeAsync(stream, item, typeInfo, ct));
+    }
+
+    private RequestBuilder JsonLinesCore<T>(IAsyncEnumerable<T> items, Func<Stream, T, CancellationToken, Task> serialize)
+    {
+        SetContent(() => new PushContent(async (stream, ct) =>
+        {
+            await foreach (var item in items.WithCancellation(ct).ConfigureAwait(false))
+            {
+                await serialize(stream, item, ct).ConfigureAwait(false);
+                await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+                await stream.FlushAsync(ct).ConfigureAwait(false);   // send each line as it is ready
+            }
+        }, "application/x-ndjson"), isReplayable: false);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> as JSON serialized straight to the network instead of into a buffer first,
+    /// for very large payloads. The value is serialized again for each attempt, so the request can still be retried.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder JsonStreamed<T>(T value)
+    {
+        var options = _client.JsonOptions;
+        SetContent(() => new PushContent((stream, ct) => JsonSerializer.SerializeAsync(stream, value, options, ct),
+            "application/json; charset=utf-8"), isReplayable: true);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> as JSON serialized straight to the network with source-generated metadata.
+    /// </summary>
+    public RequestBuilder JsonStreamed<T>(T value, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        SetContent(() => new PushContent((stream, ct) => JsonSerializer.SerializeAsync(stream, value, typeInfo, ct),
+            "application/json; charset=utf-8"), isReplayable: true);
+        return this;
+    }
+
     private void SetJsonContent(byte[] bytes) =>
         SetContent(() => CreateByteContent(bytes, "application/json; charset=utf-8"), isReplayable: true);
 
