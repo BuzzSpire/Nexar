@@ -36,9 +36,55 @@ public sealed class ClientBuilder
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
+    private readonly List<KeyValuePair<string, string>> _defaultQuery = new();
+    private ClientOptions? _parent;
 
     internal ClientBuilder()
     {
+    }
+
+    /// <summary>
+    /// A builder for <see cref="NexarClient.With"/>: starts from the parent's settings and reuses its connection pool.
+    /// </summary>
+    internal static ClientBuilder Derive(ClientOptions parent)
+    {
+        var builder = new ClientBuilder
+        {
+            _parent = parent,
+            _baseUrl = parent.BaseUrl?.AbsoluteUri,
+            _timeout = parent.Timeout,
+            _jsonOptions = new JsonSerializerOptions(parent.JsonOptions),
+            _retry = parent.Retry,
+            _authenticator = parent.Authenticator,
+            _logger = parent.Logger,
+            _requestDefaults = parent.RequestDefaults,
+            _rateLimiter = parent.RateLimiter,
+            _cache = parent.Cache,
+            _cacheClock = parent.CacheClock
+        };
+        foreach (var (name, value) in parent.DefaultHeaders)
+        {
+            builder._defaultHeaders[name] = value;
+        }
+        builder._defaultQuery.AddRange(parent.DefaultQuery);
+        builder._redactHeaders.Clear();
+        builder._redactHeaders.AddRange(parent.Redactor.Headers);
+        builder._redactQueryParameters.Clear();
+        builder._redactQueryParameters.AddRange(parent.Redactor.QueryParameters);
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a query parameter sent with every request, e.g. <c>.DefaultQuery("api-version", "2024-05-01")</c>.
+    /// A request parameter with the same name replaces it.
+    /// </summary>
+    public ClientBuilder DefaultQuery(string name, object value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        var formatted = ValueEncoder.Format(value) ?? throw new ArgumentNullException(nameof(value));
+        _defaultQuery.RemoveAll(q => q.Key == name);
+        _defaultQuery.Add(new(name, formatted));
+        return this;
     }
 
     /// <summary>
@@ -789,8 +835,14 @@ public sealed class ClientBuilder
             jsonOptions.MakeReadOnly();
         }
 
-        var ownsHttpClient = _httpClient == null;
-        var httpClient = _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
+        if (_parent != null && (_httpClient != null || _primaryHandler != null || _handlers.Count > 0 || _handlerSettings.Count > 0))
+        {
+            throw new NexarException(ErrorKind.Builder,
+                $"A client made with With() shares its parent's connection pool, so it cannot change handler settings ({handlerSettings}), HttpMessageHandler(), AddHandler() or HttpClient().");
+        }
+
+        var ownsHttpClient = _parent == null && _httpClient == null;
+        var httpClient = _parent?.HttpClient ?? _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
         {
             // Timeouts are enforced per request so they can be told apart from cancellation.
             Timeout = System.Threading.Timeout.InfiniteTimeSpan
@@ -808,11 +860,14 @@ public sealed class ClientBuilder
             _logger,
             new Redactor(_redactHeaders, _redactQueryParameters),
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
-            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
+            RedirectLimit: _parent != null
+                ? _parent.RedirectLimit
+                : _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
             _requestDefaults,
             _rateLimiter,
             _cache,
-            _cacheClock);
+            _cacheClock,
+            _defaultQuery.ToList());
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

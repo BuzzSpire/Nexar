@@ -51,6 +51,10 @@ internal sealed class Redactor
         _queryParameters = new HashSet<string>(queryParameters, StringComparer.OrdinalIgnoreCase);
     }
 
+    public IEnumerable<string> Headers => _headers;
+
+    public IEnumerable<string> QueryParameters => _queryParameters;
+
     public bool IsSensitiveHeader(string name, IAuthenticator? authenticator) =>
         _headers.Contains(name) || (authenticator is IRedactionHints hints && hints.Headers.Contains(name, StringComparer.OrdinalIgnoreCase));
 

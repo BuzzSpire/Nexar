@@ -826,7 +826,11 @@ public sealed class RequestBuilder
         }
 
         var template = _pathParameters.Count == 0 ? _url : UrlBuilder.ExpandPath(_url, _pathParameters);
-        var url = UrlBuilder.Build(_client.BaseUrl, template, _query);
+        // Default query parameters come first; a request parameter with the same name replaces them.
+        var query = _client.DefaultQuery.Count == 0
+            ? _query
+            : _client.DefaultQuery.Where(d => !_query.Any(q => q.Key == d.Key)).Concat(_query).ToList();
+        var url = UrlBuilder.Build(_client.BaseUrl, template, query);
 
         // Request headers replace default headers of the same name, all values included.
         var headers = _client.DefaultHeaders.ToDictionary(

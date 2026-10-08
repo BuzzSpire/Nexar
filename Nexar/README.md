@@ -99,11 +99,22 @@ var client = NexarClient.Builder()
 var client = new NexarClient();   // all defaults
 ```
 
+Need slightly different defaults, such as another base path, tenant headers or other credentials? `With()` derives a client that shares the same connection pool:
+
+```csharp
+using var tenant = client.With(b => b
+    .BaseUrl("https://api.example.com/v1/tenants/acme")
+    .DefaultHeader("X-Tenant", "acme")
+    .Auth(Auth.Bearer(acmeToken)));
+```
+
+Disposing a derived client does not close the pool. Handler settings such as proxies, TLS and cookies belong to the parent.
+
 | `ClientBuilder` | What it does |
 |---|---|
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(t)` | Total time for one attempt: connecting, sending, receiving headers, and reading the body with `Text`/`Bytes`/`Json`. `Stream()` and the streaming readers are not limited. Default 100 s. |
-| `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)` | Sent with every request. A request header with the same name replaces it. |
+| `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)`, `DefaultQuery(name, value)` | Sent with every request (e.g. `?api-version=...`). A request header or query parameter with the same name replaces it. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
 | `QueryStyle(arrays, nested)` | How `Query(object)` and `Form(object)` encode arrays and nested objects. |
 | `Retry(maxRetries, delay, exponentialBackoff, maxDelay, jitter)`, `RetryWhen(ctx => ...)`, `OnRetry(e => ...)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |

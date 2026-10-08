@@ -49,6 +49,28 @@ public sealed partial class NexarClient : IDisposable
 
     internal RequestDefaults RequestDefaults => _options.RequestDefaults;
 
+    internal IReadOnlyList<KeyValuePair<string, string>> DefaultQuery => _options.DefaultQuery;
+
+    /// <summary>
+    /// Creates a client with different request defaults (base URL, headers, query, auth, timeout, retries, JSON
+    /// options, ...) that shares this client's connection pool. Disposing it does not close the pool.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// var tenant = client.With(b => b.BaseUrl($"{baseUrl}/tenants/acme").DefaultHeader("X-Tenant", "acme"));
+    /// </code>
+    /// </example>
+    /// <exception cref="NexarException">
+    /// <paramref name="configure"/> changes handler settings (proxy, TLS, cookies, ...), which belong to this client.
+    /// </exception>
+    public NexarClient With(Action<ClientBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var builder = ClientBuilder.Derive(_options);
+        configure(builder);
+        return new NexarClient(builder.BuildOptions());
+    }
+
     internal QueryStyle QueryStyle => _options.RequestDefaults.QueryStyle;
 
     /// <summary>Starts a GET request.</summary>
@@ -550,7 +572,8 @@ internal sealed record ClientOptions(
     RequestDefaults RequestDefaults,
     System.Threading.RateLimiting.RateLimiter? RateLimiter,
     IHttpCache? Cache,
-    TimeProvider CacheClock);
+    TimeProvider CacheClock,
+    IReadOnlyList<KeyValuePair<string, string>> DefaultQuery);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.
