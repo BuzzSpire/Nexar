@@ -564,9 +564,17 @@ public sealed class RequestBuilder
         };
     }
 
+    internal static readonly HttpMethod QueryMethod = new("QUERY");
+
     private static bool IsIdempotent(HttpMethod method) =>
         method == HttpMethod.Get || method == HttpMethod.Head || method == HttpMethod.Options ||
-        method == HttpMethod.Trace || method == HttpMethod.Put || method == HttpMethod.Delete;
+        method == HttpMethod.Trace || method == HttpMethod.Put || method == HttpMethod.Delete || method == QueryMethod;
+
+    internal RequestBuilder Fail(Exception error)
+    {
+        _error ??= error;
+        return this;
+    }
 
     private void SetContent(Func<HttpContent> content, bool isReplayable)
     {

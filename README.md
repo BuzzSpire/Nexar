@@ -64,7 +64,7 @@ var client = new NexarClient();
 
 ## Requests
 
-Start with `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head` or `Request(method, url)`, then chain:
+Start with `Get`, `Post`, `Put`, `Patch`, `Delete`, `Head`, `Options`, `Trace`, `Query` (the safe QUERY method), or `Request(method, url)` for any other method (`client.Request("PROPFIND", url)`), then chain:
 
 ```csharp
 var response = await client.Post("/orders")
