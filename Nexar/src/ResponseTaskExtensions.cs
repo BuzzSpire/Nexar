@@ -43,6 +43,31 @@ public static class ResponseTaskExtensions
     }
 
     /// <summary>
+    /// Awaits the response and returns its body as an unbuffered stream.
+    /// Disposing the stream disposes the response and releases the connection.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stream();
+    /// await body.CopyToAsync(file);
+    /// </code>
+    /// </example>
+    public static async Task<Stream> Stream(this Task<NexarResponse> response, CancellationToken cancellationToken = default)
+    {
+        var result = await response.ConfigureAwait(false);
+        try
+        {
+            var body = await result.Stream(cancellationToken).ConfigureAwait(false);
+            return new OwningStream(body, result);
+        }
+        catch
+        {
+            result.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Awaits the response, deserializes its body as JSON and disposes it.
     /// </summary>
     public static async Task<T> Json<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default)

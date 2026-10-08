@@ -180,6 +180,13 @@ Stream body  = await res.Stream();   // not buffered, for large downloads
 var report = await client.Get("/report").Send().ErrorForStatus().Json<Report>();
 ```
 
+`Stream()` chains too. The returned stream owns the response, so disposing it releases the connection:
+
+```csharp
+await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stream();
+await body.CopyToAsync(file);
+```
+
 ## Errors
 
 Everything Nexar throws is a `NexarException` with a `Kind`:
