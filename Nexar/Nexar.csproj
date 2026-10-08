@@ -15,7 +15,7 @@
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
     <PackageTags>http;httpclient;rest;api;requests;async;fluent;reqwest;retry;dotnet;csharp;net9</PackageTags>
-    <PackageReleaseNotes>Release 2026.1008.0: Complete rewrite with a reqwest-style fluent API (NexarClient, ClientBuilder, RequestBuilder, NexarResponse, NexarException). Breaking change: the 2.x API has been removed. See "Migrating from 2.x" in the README.</PackageReleaseNotes>
+    <PackageReleaseNotes>Release 2026.1008.0: complete rewrite with a reqwest-style fluent API. Not compatible with earlier versions. Changelog: https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageId>BuzzSpire.Nexar</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
