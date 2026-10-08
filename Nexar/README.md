@@ -41,6 +41,8 @@ var client = new NexarClient();
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(TimeSpan)` | Total time for one attempt: sending, receiving headers, and reading the body with `Text()`/`Bytes()`/`Json<T>()`. `Stream()` is not limited. Default 100 s. |
 | `ConnectTimeout(t)`, `PoolIdleTimeout(t)`, `PoolConnectionLifetime(t)`, `MaxConnectionsPerHost(n)` | Fail fast on unreachable hosts (TCP + TLS handshake), and tune connection reuse, e.g. a lifetime so DNS changes are picked up. |
+| `UnixSocket(path)`, `NamedPipe(name)` | Talk HTTP to local daemons such as the Docker Engine API. |
+| `Resolve(host, addresses...)`, `LocalAddress(ip)` | Skip DNS for a host (TLS and `Host` still use the name), or send from a specific interface. |
 | `HttpVersion(version, policy)` | Default HTTP version and fallback policy for all requests, e.g. HTTP/2 or HTTP/3 only. |
 | `ExpectContinue()`, `ExpectContinueTimeout(t)` | Send `Expect: 100-continue` with bodies so servers can reject large uploads early. |
 | `Http2MultipleConnections()`, `Http2KeepAlive(interval, timeout)`, `Http3MultipleConnections()` | HTTP/2 and HTTP/3 connection tuning for high-throughput services. |

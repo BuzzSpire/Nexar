@@ -27,6 +27,9 @@ public sealed class ClientBuilder
     private readonly List<string> _proxyBypass = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _clientCertificates = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _rootCertificates = new();
+    private ConnectTarget? _connectTarget;
+    private readonly Dictionary<string, System.Net.IPAddress[]> _resolve = new(StringComparer.OrdinalIgnoreCase);
+    private System.Net.IPAddress? _localAddress;
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
@@ -406,6 +409,127 @@ public sealed class ClientBuilder
     public ClientBuilder Http3MultipleConnections(bool enable = true) =>
         Configure(nameof(Http3MultipleConnections), h => h.EnableMultipleHttp3Connections = enable);
 
+    /// <summary>
+    /// Connects to the Unix domain socket at <paramref name="path"/> instead of a TCP host, e.g. the Docker Engine
+    /// API at <c>/var/run/docker.sock</c>. Use any host in the URLs, e.g. <c>BaseUrl("http://localhost")</c>.
+    /// </summary>
+    public ClientBuilder UnixSocket(string path)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        _connectTarget = new ConnectTarget.Unix(path);
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Connects to the local named pipe <paramref name="pipeName"/> instead of a TCP host, e.g. <c>docker_engine</c>
+    /// on Windows. Use any host in the URLs, e.g. <c>BaseUrl("http://localhost")</c>.
+    /// </summary>
+    public ClientBuilder NamedPipe(string pipeName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(pipeName);
+        _connectTarget = new ConnectTarget.Pipe(pipeName);
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Connects to <paramref name="addresses"/> whenever a URL names <paramref name="host"/>, skipping DNS.
+    /// The <c>Host</c> header and TLS certificate checks still use <paramref name="host"/>.
+    /// </summary>
+    public ClientBuilder Resolve(string host, params System.Net.IPAddress[] addresses)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        if (addresses.Length == 0)
+        {
+            throw new ArgumentException("At least one address is required.", nameof(addresses));
+        }
+        _resolve[host] = addresses;
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    /// <summary>
+    /// Sends from the local <paramref name="address"/>, for servers with several network interfaces.
+    /// </summary>
+    public ClientBuilder LocalAddress(System.Net.IPAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+        _localAddress = address;
+        return Configure("Connect", h => h.ConnectCallback = ConnectAsync);
+    }
+
+    private async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken cancellationToken)
+    {
+        switch (_connectTarget)
+        {
+            case ConnectTarget.Unix unix:
+            {
+                var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Unspecified);
+                try
+                {
+                    await socket.ConnectAsync(new System.Net.Sockets.UnixDomainSocketEndPoint(unix.Path), cancellationToken).ConfigureAwait(false);
+                    return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            }
+            case ConnectTarget.Pipe pipe:
+            {
+                var stream = new System.IO.Pipes.NamedPipeClientStream(".", pipe.Name, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
+                try
+                {
+                    await stream.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                    return stream;
+                }
+                catch
+                {
+                    await stream.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
+            }
+        }
+
+        var endPoint = context.DnsEndPoint;
+        var addresses = _resolve.TryGetValue(endPoint.Host, out var overridden)
+            ? overridden
+            : await System.Net.Dns.GetHostAddressesAsync(endPoint.Host, cancellationToken).ConfigureAwait(false);
+
+        Exception? lastError = null;
+        foreach (var address in addresses)
+        {
+            if (_localAddress != null && _localAddress.AddressFamily != address.AddressFamily)
+            {
+                continue;
+            }
+
+            var socket = new System.Net.Sockets.Socket(address.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                if (_localAddress != null)
+                {
+                    socket.Bind(new System.Net.IPEndPoint(_localAddress, 0));
+                }
+                await socket.ConnectAsync(new System.Net.IPEndPoint(address, endPoint.Port), cancellationToken).ConfigureAwait(false);
+                return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
+            }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                socket.Dispose();
+                lastError = ex;
+            }
+        }
+
+        throw lastError ?? new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.AddressFamilyNotSupported);
+    }
+
+    private abstract record ConnectTarget
+    {
+        public sealed record Unix(string Path) : ConnectTarget;
+
+        public sealed record Pipe(string Name) : ConnectTarget;
+    }
+
     private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
     {
         _handlerSettings[setting] = apply;
@@ -529,7 +653,13 @@ public sealed class ClientBuilder
             }
         }
 
-        var handlerSettings = string.Join(", ", _handlerSettings.Keys.Select(k => $"{k}()"));
+        if (_connectTarget != null && (_resolve.Count > 0 || _localAddress != null))
+        {
+            throw new NexarException(ErrorKind.Builder,
+                "UnixSocket() and NamedPipe() cannot be combined with Resolve() or LocalAddress(), which apply to TCP connections.");
+        }
+
+        var handlerSettings = string.Join(", ", _handlerSettings.Keys.Select(k => k == "Connect" ? "UnixSocket()/NamedPipe()/Resolve()/LocalAddress()" : $"{k}()"));
 
         if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || _handlerSettings.Count > 0))
         {
