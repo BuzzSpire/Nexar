@@ -242,3 +242,75 @@ public class RequestBuilderTests
         Assert.False(handler.Last.Headers.ContainsKey("Content-Type"));
     }
 }
+
+public class HeaderAppendTests
+{
+    [Fact]
+    public async Task HeaderAppendSendsAllValues()
+    {
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
+
+        await client.Get("/").Header("Accept", "application/json").HeaderAppend("Accept", "text/csv").Send();
+
+        Assert.Equal("application/json, text/csv", handler.Last.Headers["Accept"]);
+    }
+
+    [Fact]
+    public async Task HeaderAppendWithoutExistingValueAdds()
+    {
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
+
+        await client.Get("/").HeaderAppend("X-Trace", "a").HeaderAppend("x-trace", "b").Send();
+
+        Assert.Equal("a, b", handler.Last.Headers["X-Trace"]);
+    }
+
+    [Fact]
+    public async Task HeaderReplacesAppendedValues()
+    {
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
+
+        await client.Get("/").HeaderAppend("X-Trace", "a").HeaderAppend("X-Trace", "b").Header("X-Trace", "c").Send();
+
+        Assert.Equal("c", handler.Last.Headers["X-Trace"]);
+    }
+
+    [Fact]
+    public async Task RequestHeaderValuesReplaceDefaultHeader()
+    {
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler, b => b.DefaultHeader("Accept", "text/html"));
+
+        await client.Get("/").HeaderAppend("Accept", "application/json").HeaderAppend("Accept", "text/csv").Send();
+
+        Assert.Equal("application/json, text/csv", handler.Last.Headers["Accept"]);
+    }
+
+    [Fact]
+    public async Task HeaderAppendIsValidated()
+    {
+        using var client = TestClient.Create(new FakeHandler());
+
+        var ex = await Assert.ThrowsAsync<NexarException>(() => client.Get("/").HeaderAppend("X", "a\r\nb").Send());
+
+        Assert.True(ex.IsBuilder);
+    }
+
+    [Fact]
+    public async Task ChangingTheBuilderAfterSendDoesNotAffectRetries()
+    {
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
+        var builder = client.Get("/").HeaderAppend("X-Trace", "a");
+
+        await builder.Send();
+        builder.HeaderAppend("X-Trace", "b");
+        await builder.Send();
+
+        Assert.Equal("a", handler.Requests[0].Headers["X-Trace"]);
+        Assert.Equal("a, b", handler.Requests[1].Headers["X-Trace"]);
+    }
+}

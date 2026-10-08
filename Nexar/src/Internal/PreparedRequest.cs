@@ -6,7 +6,7 @@ namespace Nexar;
 internal sealed class PreparedRequest(
     HttpMethod method,
     Uri url,
-    IReadOnlyDictionary<string, string> headers,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> headers,
     Func<HttpContent>? content,
     bool isReplayable,
     TimeSpan? timeout,
@@ -38,9 +38,9 @@ internal sealed class PreparedRequest(
             message.Content = content();
         }
 
-        foreach (var (name, value) in headers)
+        foreach (var (name, values) in headers)
         {
-            if (message.Headers.TryAddWithoutValidation(name, value))
+            if (message.Headers.TryAddWithoutValidation(name, values))
             {
                 continue;
             }
@@ -49,7 +49,7 @@ internal sealed class PreparedRequest(
             if (message.Content != null)
             {
                 message.Content.Headers.Remove(name);
-                message.Content.Headers.TryAddWithoutValidation(name, value);
+                message.Content.Headers.TryAddWithoutValidation(name, values);
             }
         }
 

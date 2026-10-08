@@ -16,7 +16,7 @@ public sealed class RequestBuilder
     private readonly NexarClient _client;
     private readonly HttpMethod _method;
     private readonly string _url;
-    private readonly Dictionary<string, string> _headers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<string>> _headers = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<KeyValuePair<string, string>> _query = new();
     private Func<HttpContent>? _content;
     private bool _isReplayable = true;
@@ -43,7 +43,28 @@ public sealed class RequestBuilder
         Capture(() =>
         {
             HeaderValidator.Validate(name, value);
-            _headers[name] = value;
+            _headers[name] = [value];
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Adds another value to a header without removing the existing ones,
+    /// e.g. <c>.Header("Accept", "a").HeaderAppend("Accept", "b")</c>.
+    /// </summary>
+    public RequestBuilder HeaderAppend(string name, string value)
+    {
+        Capture(() =>
+        {
+            HeaderValidator.Validate(name, value);
+            if (_headers.TryGetValue(name, out var values))
+            {
+                values.Add(value);
+            }
+            else
+            {
+                _headers[name] = [value];
+            }
         });
         return this;
     }
@@ -240,10 +261,12 @@ public sealed class RequestBuilder
 
         var url = UrlBuilder.Build(_client.BaseUrl, _url, _query);
 
-        var headers = new Dictionary<string, string>(_client.DefaultHeaders, StringComparer.OrdinalIgnoreCase);
-        foreach (var header in _headers)
+        // Request headers replace default headers of the same name, all values included.
+        var headers = _client.DefaultHeaders.ToDictionary(
+            h => h.Key, h => (IReadOnlyList<string>)[h.Value], StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, values) in _headers)
         {
-            headers[header.Key] = header.Value;
+            headers[name] = values.ToArray();
         }
 
         // Request-level auth wins; an explicit Authorization header also opts out of the client's authenticator.
