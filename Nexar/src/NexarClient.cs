@@ -294,6 +294,10 @@ public sealed class NexarClient : IDisposable
                 continue;
             }
 
+            if (request.DownloadProgress is { } progress)
+            {
+                response.Content = new DownloadProgressContent(response.Content, progress);
+            }
             return new NexarResponse(response, request.Url, JsonOptions, deadline, request.MaxResponseSize);
         }
     }

@@ -27,6 +27,8 @@ public sealed class RequestBuilder
     private bool? _expectContinue;
     private ContentEncoding? _compression;
     private long? _maxResponseSize;
+    private IProgress<TransferProgress>? _uploadProgress;
+    private IProgress<TransferProgress>? _downloadProgress;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -603,6 +605,28 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Reports upload progress (bytes written to the network) as the body is sent.
+    /// </summary>
+    /// <example><c>.UploadProgress(new Progress&lt;TransferProgress&gt;(p =&gt; bar.Value = p.Percent ?? 0))</c></example>
+    public RequestBuilder UploadProgress(IProgress<TransferProgress> progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        _uploadProgress = progress;
+        return this;
+    }
+
+    /// <summary>
+    /// Reports download progress as the response body is read by <c>Text()</c>, <c>Bytes()</c>, <c>Json()</c>,
+    /// <c>SaveTo()</c>, <c>DownloadTo()</c> or <c>Stream()</c>.
+    /// </summary>
+    public RequestBuilder DownloadProgress(IProgress<TransferProgress> progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        _downloadProgress = progress;
+        return this;
+    }
+
+    /// <summary>
     /// Compresses the body while sending it and sets <c>Content-Encoding</c>, for APIs that accept compressed
     /// uploads (telemetry, log ingestion, bulk imports). The body stays retryable.
     /// </summary>
@@ -675,6 +699,12 @@ public sealed class RequestBuilder
             var uncompressed = content;
             content = () => new CompressedContent(uncompressed(), encoding);
         }
+        if (content != null && _uploadProgress is { } upload)
+        {
+            // Outermost, so it counts the bytes that actually go on the wire.
+            var tracked = content;
+            content = () => new UploadProgressContent(tracked(), upload);
+        }
 
         return new PreparedRequest
         {
@@ -683,6 +713,7 @@ public sealed class RequestBuilder
             Headers = headers,
             Content = content,
             MaxResponseSize = _maxResponseSize ?? defaults.MaxResponseSize,
+            DownloadProgress = _downloadProgress,
             IsReplayable = _isReplayable,
             IsIdempotent = _retryable ?? IsIdempotent(_method),
             Authenticator = authenticator,
