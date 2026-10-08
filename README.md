@@ -367,6 +367,27 @@ builder.Services.AddOpenTelemetry()
 
 Secrets are redacted everywhere: the values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and API key headers set through `Auth`, and query parameters such as `api_key`, `access_token`, `token` and `client_secret`. You can add more with `.RedactHeaders(...)` and `.RedactQueryParameters(...)`.
 
+## Dependency injection
+
+`BuzzSpire.Nexar.Extensions.DependencyInjection` registers clients on top of `IHttpClientFactory`, so handler lifetimes, `AddHttpMessageHandler`, resilience handlers and logging keep working:
+
+```csharp
+services.AddNexarClient("github", b => b.BaseUrl("https://api.github.com").UserAgent("my-app"))
+    .AddHttpMessageHandler<CorrelationHandler>()
+    .AddStandardResilienceHandler();                    // any IHttpClientBuilder extension
+
+var github = serviceProvider.GetRequiredService<INexarClientFactory>().CreateClient("github");
+
+// Typed clients get a NexarClient in their constructor
+services.AddNexarClient<GitHubClient>((sp, b) => b
+    .BaseUrl("https://api.github.com")
+    .Auth(Auth.Bearer(sp.GetRequiredService<TokenCache>().GetAsync)));
+
+public sealed class GitHubClient(NexarClient http) { /* ... */ }
+```
+
+Nexar's `Timeout()` applies; the factory client's 100 s default is lifted. Handler-level settings (proxy, cookies, TLS, ...) belong on the `IHttpClientBuilder`, e.g. `ConfigurePrimaryHttpMessageHandler`.
+
 ## Testing
 
 The companion package `BuzzSpire.Nexar.Testing` provides a fluent mock handler:

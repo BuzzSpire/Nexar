@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Nexar.Extensions.DependencyInjection</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Version>2026.1008.0</Version>
+    <PackageId>BuzzSpire.Nexar.Extensions.DependencyInjection</PackageId>
+    <Title>Nexar dependency injection</Title>
+    <Description>Registers Nexar clients with IServiceCollection on top of IHttpClientFactory: named and typed clients, with handler lifetimes, AddHttpMessageHandler, resilience handlers and logging intact.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
+    <PackageTags>http;nexar;dependency-injection;httpclientfactory</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexar\Nexar.csproj" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

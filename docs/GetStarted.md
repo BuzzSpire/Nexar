@@ -122,10 +122,16 @@ var client = NexarClient.Builder()
 
 ## 9. Use it with dependency injection
 
+```bash
+dotnet add package BuzzSpire.Nexar.Extensions.DependencyInjection
+```
+
 ```csharp
-builder.Services.AddHttpClient("api");
-builder.Services.AddSingleton(sp => NexarClient.Builder()
-    .BaseUrl("https://api.example.com/v1")
-    .HttpClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("api"))
-    .Build());
+builder.Services.AddNexarClient<ExampleApi>(b => b.BaseUrl("https://api.example.com/v1"));
+
+public sealed class ExampleApi(NexarClient http)
+{
+    public Task<User> GetUser(int id) =>
+        http.Get("/users/{id}").Path("id", id).Send().ErrorForStatus().Json<User>();
+}
 ```

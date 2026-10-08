@@ -25,7 +25,19 @@ public sealed class FakeHandler : HttpMessageHandler
     {
     }
 
-    public List<RecordedRequest> Requests { get; } = new();
+    private readonly List<RecordedRequest> _requests = new();
+
+    /// <summary>A snapshot of the recorded requests; safe while requests are still running concurrently.</summary>
+    public IReadOnlyList<RecordedRequest> Requests
+    {
+        get
+        {
+            lock (_requests)
+            {
+                return _requests.ToArray();
+            }
+        }
+    }
 
     public RecordedRequest Last => Requests[^1];
 
@@ -41,7 +53,7 @@ public sealed class FakeHandler : HttpMessageHandler
     {
         // The request is disposed after sending, so capture everything up front.
         var body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-        Requests.Add(new RecordedRequest(
+        var recorded = new RecordedRequest(
             request.Method,
             request.RequestUri!,
             request.Headers.ToDictionary(h => h.Key, h => string.Join(", ", h.Value), StringComparer.OrdinalIgnoreCase),
@@ -51,7 +63,11 @@ public sealed class FakeHandler : HttpMessageHandler
         {
             Version = request.Version,
             VersionPolicy = request.VersionPolicy
-        });
+        };
+        lock (_requests)
+        {
+            _requests.Add(recorded);
+        }
 
         var response = await _respond(request, cancellationToken);
         response.RequestMessage ??= request;
