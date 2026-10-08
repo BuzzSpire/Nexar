@@ -9,7 +9,7 @@ namespace Nexar;
 /// An HTTP response. The body is not read until you call
 /// <see cref="Text"/>, <see cref="Json{T}"/>, <see cref="Bytes"/> or <see cref="Stream"/>.
 /// </summary>
-public sealed class NexarResponse : IDisposable
+public sealed partial class NexarResponse : IDisposable
 {
     /// <summary>How much of an error body <see cref="ErrorForStatus"/> keeps.</summary>
     internal const int MaxErrorBodyBytes = 64 * 1024;

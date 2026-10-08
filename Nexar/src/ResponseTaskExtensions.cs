@@ -77,6 +77,51 @@ public static class ResponseTaskExtensions
     }
 
     /// <summary>
+    /// Awaits the response and reads it as Server-Sent Events. The response is disposed when the enumeration ends.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// await foreach (var e in client.Post("/v1/chat").Json(request).Send().ErrorForStatus().Events(ct))
+    ///     Console.Write(e.Data);
+    /// </code>
+    /// </example>
+    public static async IAsyncEnumerable<ServerSentEvent> Events(this Task<NexarResponse> response,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        await foreach (var item in result.Events(cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+
+    /// <summary>
+    /// Awaits the response and reads it as newline-delimited JSON. The response is disposed when the enumeration ends.
+    /// </summary>
+    public static async IAsyncEnumerable<T> JsonLines<T>(this Task<NexarResponse> response,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        await foreach (var item in result.JsonLines<T>(cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+
+    /// <summary>
+    /// Awaits the response and reads its JSON array body one element at a time. The response is disposed when the enumeration ends.
+    /// </summary>
+    public static async IAsyncEnumerable<T> JsonStream<T>(this Task<NexarResponse> response,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        await foreach (var item in result.JsonStream<T>(cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+
+    /// <summary>
     /// Awaits the response, deserializes its body as JSON and disposes it.
     /// </summary>
     public static async Task<T> Json<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default)

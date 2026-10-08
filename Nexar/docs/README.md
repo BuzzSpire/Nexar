@@ -217,6 +217,30 @@ await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stre
 await body.CopyToAsync(file);
 ```
 
+### Streaming and pagination
+
+```csharp
+// Server-Sent Events (LLM / chat completion endpoints, notification feeds)
+await foreach (var e in client.Post("/v1/chat").Json(request).Send().ErrorForStatus().Events(ct))
+{
+    Console.Write(e.Data);        // e.Event, e.Id, e.Retry
+}
+
+// Newline-delimited JSON
+await foreach (var entry in client.Get("/logs").Send().JsonLines<LogEntry>(ct)) { }
+
+// A huge JSON array, one element at a time
+await foreach (var order in client.Get("/orders/export").Send().JsonStream<Order>(ct)) { }
+
+// Follow Link: <...>; rel="next" across pages, with the same headers and auth
+await foreach (var repo in client.Get("/orgs/x/repos").Paginate<Repo>(ct)) { }
+await foreach (var item in client.Get("/search").Paginate<SearchPage, Item>(page => page.Items, ct)) { }
+
+var next = res.Links["next"];     // parsed Link header
+```
+
+The SSE parser follows the WHATWG rules: multi-line `data:`, comments, `id:` carrying over to later events, and `retry:`. None of these readers buffer the body, and the client timeout does not apply to them, so use the cancellation token. The response is disposed when the enumeration ends, including when you `break` early.
+
 ## Errors
 
 Everything Nexar throws is a `NexarException` with a `Kind`:

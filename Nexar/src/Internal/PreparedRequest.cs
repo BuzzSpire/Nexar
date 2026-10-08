@@ -3,7 +3,7 @@ namespace Nexar;
 /// <summary>
 /// A fully built request that can produce a fresh <see cref="HttpRequestMessage"/> for every attempt.
 /// </summary>
-internal sealed class PreparedRequest
+internal sealed record PreparedRequest
 {
     public required HttpMethod Method { get; init; }
 

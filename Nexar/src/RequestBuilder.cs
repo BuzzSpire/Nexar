@@ -509,6 +509,49 @@ public sealed class RequestBuilder
         return new FileInfo(path).Length;
     }
 
+    /// <summary>
+    /// Sends the request and every following page linked with <c>Link: &lt;...&gt;; rel="next"</c> (RFC 8288),
+    /// yielding the items of each page, whose body is a JSON array of <typeparamref name="T"/>.
+    /// Every page is sent with the same headers and authentication.
+    /// </summary>
+    /// <exception cref="NexarException">A page fails (status, decode, ...).</exception>
+    public IAsyncEnumerable<T> Paginate<T>(CancellationToken cancellationToken = default) =>
+        Paginate<List<T>, T>(page => page, cancellationToken);
+
+    /// <summary>
+    /// Like <see cref="Paginate{T}"/>, for pages where the items are wrapped, e.g. <c>{ "items": [...] }</c>.
+    /// </summary>
+    public async IAsyncEnumerable<TItem> Paginate<TPage, TItem>(Func<TPage, IEnumerable<TItem>> selectItems,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(selectItems);
+        var request = Prepare();
+        var visited = new HashSet<Uri>();
+
+        while (visited.Add(request.Url))
+        {
+            Uri? next;
+            List<TItem> items;
+            using (var response = await _client.ExecuteAsync(request, cancellationToken).ConfigureAwait(false))
+            {
+                await response.ErrorForStatus(cancellationToken).ConfigureAwait(false);
+                items = selectItems(await response.Json<TPage>(cancellationToken).ConfigureAwait(false)).ToList();
+                response.Links.TryGetValue("next", out next);
+            }
+
+            foreach (var item in items)
+            {
+                yield return item;
+            }
+
+            if (next == null)
+            {
+                yield break;
+            }
+            request = request with { Url = next };
+        }
+    }
+
     internal static void TryDelete(string path)
     {
         try
