@@ -135,6 +135,57 @@ public sealed class RequestBuilder
     /// </summary>
     public RequestBuilder IfUnmodifiedSince(DateTimeOffset date) => Header("If-Unmodified-Since", date.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>
+    /// Requests part of the resource: <c>Range: bytes=from-to</c>. Leave <paramref name="to"/> null to read to the end.
+    /// The server answers <c>206 Partial Content</c> (see <see cref="NexarResponse.IsPartialContent"/>), or <c>200</c> if it ignores ranges.
+    /// </summary>
+    public RequestBuilder Range(long from, long? to = null)
+    {
+        Capture(() =>
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(from);
+            if (to < from)
+            {
+                throw new ArgumentOutOfRangeException(nameof(to), to, "The end of the range must not be before its start.");
+            }
+            _headers["Range"] = [new RangeHeaderValue(from, to).ToString()];
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Requests the last <paramref name="length"/> bytes: <c>Range: bytes=-length</c>, e.g. the tail of a log.
+    /// </summary>
+    public RequestBuilder RangeSuffix(long length)
+    {
+        Capture(() =>
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(length);
+            _headers["Range"] = [new RangeHeaderValue(null, length).ToString()];
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Sets <c>If-Range</c>: the range is honored only if the resource still has this ETag; otherwise the whole resource is sent.
+    /// </summary>
+    public RequestBuilder IfRange(string etag)
+    {
+        Capture(() => _headers["If-Range"] = [FormatETag(etag)]);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets <c>If-Range</c> from a previous response's <see cref="NexarResponse.ETag"/>.
+    /// </summary>
+    public RequestBuilder IfRange(EntityTagHeaderValue etag) => IfRange(etag.ToString());
+
+    /// <summary>
+    /// Sets <c>If-Range</c>: the range is honored only if the resource was not modified after <paramref name="lastModified"/>.
+    /// </summary>
+    public RequestBuilder IfRange(DateTimeOffset lastModified) =>
+        Header("If-Range", lastModified.ToUniversalTime().ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+
     private static string FormatETag(string etag)
     {
         if (etag == "*")

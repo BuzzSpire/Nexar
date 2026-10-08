@@ -60,6 +60,12 @@ public sealed class NexarResponse : IDisposable
     /// <summary>The underlying response, for anything Nexar does not expose.</summary>
     public HttpResponseMessage HttpResponseMessage => _response;
 
+    /// <summary>True for <c>206 Partial Content</c>, the answer to a honored <c>Range</c> request.</summary>
+    public bool IsPartialContent => _response.StatusCode == HttpStatusCode.PartialContent;
+
+    /// <summary>The parsed <c>Content-Range</c> of a partial response, or null.</summary>
+    public ContentRangeHeaderValue? ContentRange => _response.Content.Headers.ContentRange;
+
     /// <summary>The parsed <c>Content-Type</c>, or null.</summary>
     public MediaTypeHeaderValue? ContentType => _response.Content.Headers.ContentType;
 

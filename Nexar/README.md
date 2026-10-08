@@ -70,6 +70,7 @@ var response = await client.Post("/orders")
 | Headers | `Header(name, value)` (replace), `HeaderAppend(name, value)` (add another value), `Headers(pairs)`. Names must be RFC 9110 tokens and values must not contain CR, LF or other control characters; otherwise `Send()` throws `ErrorKind.Builder`. This makes header injection impossible. |
 | Negotiation | `Accept(mediaTypes...)`, `AcceptLanguage(languages...)` (validated, quality values included) |
 | Conditional | `IfNoneMatch(etag)`, `IfMatch(etag)`, `IfModifiedSince(date)`, `IfUnmodifiedSince(date)`; `res.IsNotModified` for 304 |
+| Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)`; `res.IsPartialContent`, `res.ContentRange` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
