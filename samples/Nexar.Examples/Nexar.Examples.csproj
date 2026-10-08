@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs every example from the README against a local demo API.
+       All examples: dotnet run (project samples/Nexar.Examples)
+       Some examples: pass their names as arguments, e.g. caching -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Nexar.Examples</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Nexar\Nexar.csproj" />
+    <ProjectReference Include="..\..\Nexar.Testing\Nexar.Testing.csproj" />
+    <ProjectReference Include="..\..\Nexar.Extensions.DependencyInjection\Nexar.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.InMemory" Version="1.9.0" />
+  </ItemGroup>
+
+</Project>
