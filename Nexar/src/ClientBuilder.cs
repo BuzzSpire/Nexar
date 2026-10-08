@@ -22,6 +22,8 @@ public sealed class ClientBuilder
     // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
     private readonly Dictionary<string, Action<SocketsHttpHandler>> _handlerSettings = new();
     private bool _acceptInvalidCerts;
+    private System.Net.WebProxy? _proxy;
+    private readonly List<string> _proxyBypass = new();
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
@@ -158,6 +160,58 @@ public sealed class ClientBuilder
         {
             h.UseCookies = true;
             h.CookieContainer = container;
+        });
+    }
+
+    /// <summary>
+    /// Sends requests through the proxy at <paramref name="url"/> (<c>http</c>, <c>https</c>, <c>socks4</c>,
+    /// <c>socks4a</c> or <c>socks5</c>). Without this, the system proxy and the <c>HTTP(S)_PROXY</c> /
+    /// <c>NO_PROXY</c> environment variables are used.
+    /// </summary>
+    /// <param name="url">The proxy URL, e.g. <c>http://proxy.local:8080</c>.</param>
+    /// <param name="credentials">Credentials for proxies that answer <c>407 Proxy Authentication Required</c>.</param>
+    /// <exception cref="ArgumentException"><paramref name="url"/> is not an absolute URL with a supported scheme.</exception>
+    public ClientBuilder Proxy(string url, System.Net.ICredentials? credentials = null)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or "socks4" or "socks4a" or "socks5"))
+        {
+            throw new ArgumentException($"'{url}' is not a proxy URL (http, https, socks4, socks4a or socks5).", nameof(url));
+        }
+
+        _proxy = new System.Net.WebProxy(uri) { Credentials = credentials };
+        return ApplyProxy();
+    }
+
+    /// <summary>
+    /// Hosts that skip the proxy set with <see cref="Proxy"/>. A leading <c>*</c> matches any prefix,
+    /// e.g. <c>*.internal.example.com</c>.
+    /// </summary>
+    public ClientBuilder ProxyBypass(params string[] hosts)
+    {
+        _proxyBypass.AddRange(hosts);
+        return _proxy == null ? this : ApplyProxy();
+    }
+
+    /// <summary>
+    /// Connects directly, ignoring the system proxy and proxy environment variables.
+    /// </summary>
+    public ClientBuilder NoProxy()
+    {
+        _proxy = null;
+        return Configure("Proxy", h => h.UseProxy = false);
+    }
+
+    private ClientBuilder ApplyProxy()
+    {
+        var proxy = _proxy!;
+        // WebProxy matches these regexes against "scheme://host[:port]".
+        proxy.BypassList = _proxyBypass
+            .Select(host => @"^(?:[a-z][a-z0-9+.\-]*://)?" + System.Text.RegularExpressions.Regex.Escape(host).Replace("\\*", ".*") + @"(?::\d+)?$")
+            .ToArray();
+        return Configure("Proxy", h =>
+        {
+            h.UseProxy = true;
+            h.Proxy = proxy;
         });
     }
 
