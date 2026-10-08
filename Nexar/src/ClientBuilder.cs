@@ -24,6 +24,8 @@ public sealed class ClientBuilder
     private bool _acceptInvalidCerts;
     private System.Net.WebProxy? _proxy;
     private readonly List<string> _proxyBypass = new();
+    private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _clientCertificates = new();
+    private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _rootCertificates = new();
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
@@ -213,6 +215,91 @@ public sealed class ClientBuilder
             h.UseProxy = true;
             h.Proxy = proxy;
         });
+    }
+
+    /// <summary>
+    /// Presents <paramref name="certificate"/> (with its private key) to servers that ask for a client certificate (mTLS).
+    /// Call it more than once to offer several; the one issued by a CA the server accepts is preferred.
+    /// </summary>
+    public ClientBuilder ClientCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        if (!certificate.HasPrivateKey)
+        {
+            throw new ArgumentException("A client certificate needs its private key.", nameof(certificate));
+        }
+        _clientCertificates.Add(certificate);
+        return Configure(nameof(ClientCertificate), h =>
+        {
+            h.SslOptions.ClientCertificates = new System.Security.Cryptography.X509Certificates.X509CertificateCollection(_clientCertificates.ToArray());
+            h.SslOptions.LocalCertificateSelectionCallback = SelectClientCertificate;
+        });
+    }
+
+    /// <summary>
+    /// Also trusts server certificates issued by <paramref name="certificate"/>, e.g. a private company CA,
+    /// in addition to the system trust store. Host names are still checked.
+    /// </summary>
+    public ClientBuilder AddRootCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        _rootCertificates.Add(certificate);
+        return Configure(nameof(AddRootCertificate), h => h.SslOptions.RemoteCertificateValidationCallback = ValidateWithCustomRoots);
+    }
+
+    /// <summary>
+    /// Refuses TLS versions older than <paramref name="version"/>: <see cref="System.Security.Authentication.SslProtocols.Tls12"/>
+    /// or <see cref="System.Security.Authentication.SslProtocols.Tls13"/>.
+    /// </summary>
+    public ClientBuilder MinTlsVersion(System.Security.Authentication.SslProtocols version)
+    {
+        var enabled = version switch
+        {
+            System.Security.Authentication.SslProtocols.Tls12 => System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+            System.Security.Authentication.SslProtocols.Tls13 => System.Security.Authentication.SslProtocols.Tls13,
+            _ => throw new ArgumentException("The minimum TLS version must be Tls12 or Tls13.", nameof(version))
+        };
+        return Configure(nameof(MinTlsVersion), h => h.SslOptions.EnabledSslProtocols = enabled);
+    }
+
+    private System.Security.Cryptography.X509Certificates.X509Certificate SelectClientCertificate(
+        object sender, string targetHost,
+        System.Security.Cryptography.X509Certificates.X509CertificateCollection localCertificates,
+        System.Security.Cryptography.X509Certificates.X509Certificate? remoteCertificate, string[] acceptableIssuers)
+    {
+        // Prefer a certificate from an issuer the server named; otherwise present the first one anyway,
+        // since servers often send an empty or unrelated issuer list.
+        return _clientCertificates.FirstOrDefault(c => acceptableIssuers.Contains(c.Issuer, StringComparer.OrdinalIgnoreCase))
+            ?? _clientCertificates[0];
+    }
+
+    private bool ValidateWithCustomRoots(
+        object sender, System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
+        System.Security.Cryptography.X509Certificates.X509Chain? chain, System.Net.Security.SslPolicyErrors errors)
+    {
+        if (errors == System.Net.Security.SslPolicyErrors.None)
+        {
+            return true;
+        }
+        // Only an untrusted chain can be fixed by extra roots; a wrong host name or a missing certificate cannot.
+        if (certificate == null || errors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
+        {
+            return false;
+        }
+
+        using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
+        custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+        custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
+        custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+        if (chain != null)
+        {
+            foreach (var element in chain.ChainElements)
+            {
+                custom.ChainPolicy.ExtraStore.Add(element.Certificate);
+            }
+        }
+        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
+        return custom.Build(leaf);
     }
 
     private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)

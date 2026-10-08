@@ -52,6 +52,7 @@ var client = new NexarClient();
 | `AddHandler(DelegatingHandler)` | Adds middleware (logging, auth refresh, Polly, ...). Runs in the order added. |
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
 | `HttpClient(httpClient)` | Uses an existing `HttpClient`, e.g. from `IHttpClientFactory`. Nexar never disposes it. |
+| `ClientCertificate(cert)`, `AddRootCertificate(ca)`, `MinTlsVersion(version)` | mTLS client certificates, extra trusted CAs (host names are still checked), TLS 1.2+ or 1.3 only. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation. Local development only. |
 | `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | Logging and secret redaction. See [Observability](#observability). |
 

@@ -43,8 +43,15 @@ public sealed class TestServer : IAsyncDisposable
     public static TestServer StartUnix(string path, Func<ServerRequest, ServerResponse> handler) =>
         new(Listen(new UnixDomainSocketEndPoint(path), AddressFamily.Unix, ProtocolType.Unspecified), handler, null, false);
 
+    /// <summary>
+    /// TLS servers are reached as "localhost", which resolves to ::1 first; listening there avoids a slow
+    /// IPv6-then-IPv4 fallback on every connection.
+    /// </summary>
     public static TestServer StartTls(X509Certificate2 certificate, Func<ServerRequest, ServerResponse> handler, bool requireClientCertificate = false) =>
-        new(Listen(new IPEndPoint(IPAddress.Loopback, 0), AddressFamily.InterNetwork, ProtocolType.Tcp), handler, certificate, requireClientCertificate);
+        new(Socket.OSSupportsIPv6
+                ? Listen(new IPEndPoint(IPAddress.IPv6Loopback, 0), AddressFamily.InterNetworkV6, ProtocolType.Tcp)
+                : Listen(new IPEndPoint(IPAddress.Loopback, 0), AddressFamily.InterNetwork, ProtocolType.Tcp),
+            handler, certificate, requireClientCertificate);
 
     private static Socket Listen(EndPoint endPoint, AddressFamily family, ProtocolType protocol)
     {
