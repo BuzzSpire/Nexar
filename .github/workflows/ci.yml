@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore Nexar.sln
+
+      - name: Build (warnings as errors)
+        run: dotnet build Nexar.sln --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: >
+          dotnet test Nexar.Test/Nexar.Test/Nexar.Test.csproj --configuration Release --no-build
+          --logger trx --results-directory TestResults --collect "XPlat Code Coverage"
+
+      - name: Run the README examples
+        run: dotnet run --project samples/Nexar.Examples --configuration Release --no-build
+
+      - name: Upload test results and coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults
+
+  aot:
+    name: Native AOT smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Publish (warnings as errors)
+        run: dotnet publish samples/Nexar.AotSmoke --configuration Release --runtime linux-x64
+
+      - name: Run the native binary
+        run: ./samples/Nexar.AotSmoke/bin/Release/net9.0/linux-x64/publish/Nexar.AotSmoke
+
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Pack the three packages
+        run: |
+          dotnet pack Nexar/Nexar.csproj --configuration Release --output artifacts
+          dotnet pack Nexar.Testing/Nexar.Testing.csproj --configuration Release --output artifacts
+          dotnet pack Nexar.Extensions.DependencyInjection/Nexar.Extensions.DependencyInjection.csproj --configuration Release --output artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/*.nupkg
