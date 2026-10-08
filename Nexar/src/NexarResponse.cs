@@ -135,13 +135,52 @@ public sealed class NexarResponse : IDisposable
     }
 
     /// <summary>
-    /// Reads the body as text, using the charset from <c>Content-Type</c>.
+    /// Reads the body as text, using the charset from <c>Content-Type</c>, else a byte order mark, else UTF-8.
     /// </summary>
-    public async Task<string> Text(CancellationToken cancellationToken = default)
+    /// <exception cref="NexarException">The charset is unknown (<see cref="ErrorKind.Decode"/>).</exception>
+    public Task<string> Text(CancellationToken cancellationToken = default) => Text(null, cancellationToken);
+
+    /// <summary>
+    /// Reads the body as text, using the charset from <c>Content-Type</c>, else a byte order mark,
+    /// else <paramref name="fallback"/>. Legacy code pages (windows-1254, Shift_JIS, ...) need
+    /// <c>Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)</c> at startup.
+    /// </summary>
+    /// <exception cref="NexarException">The charset is unknown (<see cref="ErrorKind.Decode"/>).</exception>
+    public async Task<string> Text(Encoding? fallback, CancellationToken cancellationToken = default)
     {
-        await BufferAsync(cancellationToken).ConfigureAwait(false);
-        return await _response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var bytes = await Bytes(cancellationToken).ConfigureAwait(false);
+
+        Encoding encoding;
+        var charset = ContentType?.CharSet?.Trim('"');
+        if (!string.IsNullOrEmpty(charset))
+        {
+            try
+            {
+                encoding = Encoding.GetEncoding(charset);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new NexarException(ErrorKind.Decode, $"Cannot decode text: unknown charset '{charset}'.", Url, innerException: ex);
+            }
+        }
+        else
+        {
+            encoding = DetectByteOrderMark(bytes) ?? fallback ?? Encoding.UTF8;
+        }
+
+        var preamble = encoding.Preamble;
+        var skip = preamble.Length > 0 && bytes.AsSpan().StartsWith(preamble) ? preamble.Length : 0;
+        return encoding.GetString(bytes, skip, bytes.Length - skip);
     }
+
+    private static Encoding? DetectByteOrderMark(ReadOnlySpan<byte> bytes) => bytes switch
+    {
+        [0xEF, 0xBB, 0xBF, ..] => Encoding.UTF8,
+        [0xFF, 0xFE, 0x00, 0x00, ..] => Encoding.UTF32,
+        [0xFF, 0xFE, ..] => Encoding.Unicode,
+        [0xFE, 0xFF, ..] => Encoding.BigEndianUnicode,
+        _ => null
+    };
 
     /// <summary>
     /// Reads the body as bytes.

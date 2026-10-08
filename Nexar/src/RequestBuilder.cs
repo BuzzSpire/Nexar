@@ -272,13 +272,26 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
-    /// Sends a text body.
+    /// Sends a text body, encoded with the <c>charset</c> of <paramref name="contentType"/> (UTF-8 if it has none).
     /// </summary>
     public RequestBuilder Body(string text, string contentType = "text/plain; charset=utf-8")
     {
-        var bytes = Encoding.UTF8.GetBytes(text);
-        return Body(bytes, contentType);
+        Capture(() =>
+        {
+            var charset = MediaTypeHeaderValue.Parse(contentType).CharSet?.Trim('"');
+            var encoding = string.IsNullOrEmpty(charset) ? Encoding.UTF8 : Encoding.GetEncoding(charset);
+            var bytes = encoding.GetBytes(text);
+            SetContent(() => CreateByteContent(bytes, contentType), isReplayable: true);
+        });
+        return this;
     }
+
+    /// <summary>
+    /// Sends a text body in <paramref name="encoding"/>, with a matching <c>charset</c>,
+    /// e.g. <c>.Body(xml, Encoding.Latin1, "application/xml")</c>.
+    /// </summary>
+    public RequestBuilder Body(string text, Encoding encoding, string mediaType = "text/plain") =>
+        Body(text, $"{mediaType}; charset={encoding.WebName}");
 
     /// <summary>
     /// Sends a binary body.

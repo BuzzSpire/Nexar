@@ -25,6 +25,15 @@ public static class ResponseTaskExtensions
     }
 
     /// <summary>
+    /// Awaits the response, reads its body as text with <paramref name="fallback"/> for bodies without a charset, and disposes it.
+    /// </summary>
+    public static async Task<string> Text(this Task<NexarResponse> response, System.Text.Encoding fallback, CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        return await result.Text(fallback, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Awaits the response, reads its body as bytes and disposes it.
     /// </summary>
     public static async Task<byte[]> Bytes(this Task<NexarResponse> response, CancellationToken cancellationToken = default)

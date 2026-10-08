@@ -90,6 +90,8 @@ await client.Post("/upload")
     .Send();
 
 await client.Put("/files/report.csv").Body(File.OpenRead("report.csv"), "text/csv").Send();
+
+await client.Post("/legacy").Body(xml, Encoding.GetEncoding("iso-8859-9"), "application/xml").Send();  // charset is set for you
 ```
 
 ## Authentication
@@ -165,7 +167,8 @@ Console.WriteLine(res.ETag);                 // typed headers: ContentType, ETag
 Console.WriteLine(res.Location);             // Location (absolute), RetryAfter
 Console.WriteLine(res.Header("X-RateLimit-Remaining"));   // any header, or null
 
-string text  = await res.Text();
+string text  = await res.Text();              // charset from Content-Type, else BOM, else UTF-8
+string old   = await res.Text(Encoding.Latin1); // fallback for bodies without a charset
 Report data  = await res.Json<Report>();
 byte[] bytes = await res.Bytes();
 Stream body  = await res.Stream();   // not buffered, for large downloads
