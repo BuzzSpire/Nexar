@@ -7,6 +7,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ### Added
 
+- TLS certificate pinning (`PinCertificate`, `ClientBuilder.ComputePin`).
 - OAuth 2.0 for signed-in users: `OAuth2.CreatePkce()`, `OAuth2.ExchangeCodeAsync()`, `OAuth2.RefreshAsync()` and `Auth.OAuth2RefreshToken()` with refresh token rotation.
 - Pluggable body formats (`IContentSerializer`, `ClientBuilder.Serializer`, `Body(value, serializer)`, `Serialized(value)`, `As<T>()`) with XML built in (`XmlContentSerializer`).
 - Client-level default query parameters (`DefaultQuery`), and `NexarClient.With(...)` to derive clients with other defaults that share the connection pool.

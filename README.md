@@ -499,6 +499,7 @@ The cache follows RFC 9111 as a private cache:
 | `Proxy(url, credentials)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP, HTTPS or SOCKS proxies. By default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
 | `CookieStore(jar?)` | Keeps cookies from `Set-Cookie`. Without it, the client is stateless. |
 | `ClientCertificate(cert)`, `AddRootCertificate(ca)`, `MinTlsVersion(version)` | mTLS, private CAs (host names are still checked), TLS 1.2+ or 1.3 only |
+| `PinCertificate(host, "sha256/...")`, `ClientBuilder.ComputePin(cert)` | Certificate pinning: the chain must contain a key matching a pin (checked after normal validation). Pin a backup key too. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation; local development only |
 | `ConnectTimeout(t)`, `PoolIdleTimeout(t)`, `PoolConnectionLifetime(t)`, `MaxConnectionsPerHost(n)` | Fail fast and tune connection reuse, e.g. a lifetime so DNS changes are picked up |
 | `Decompression(methods)` | Default: gzip, deflate and Brotli |

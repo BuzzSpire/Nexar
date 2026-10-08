@@ -30,6 +30,7 @@ public sealed class ClientBuilder
     private readonly List<string> _proxyBypass = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _clientCertificates = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _rootCertificates = new();
+    private readonly Dictionary<string, HashSet<string>> _pins = new(StringComparer.OrdinalIgnoreCase);
     private ConnectTarget? _connectTarget;
     private readonly Dictionary<string, System.Net.IPAddress[]> _resolve = new(StringComparer.OrdinalIgnoreCase);
     private System.Net.IPAddress? _localAddress;
@@ -320,7 +321,7 @@ public sealed class ClientBuilder
     {
         ArgumentNullException.ThrowIfNull(certificate);
         _rootCertificates.Add(certificate);
-        return Configure(nameof(AddRootCertificate), h => h.SslOptions.RemoteCertificateValidationCallback = ValidateWithCustomRoots);
+        return Configure(nameof(AddRootCertificate), _ => { });
     }
 
     /// <summary>
@@ -349,33 +350,99 @@ public sealed class ClientBuilder
             ?? _clientCertificates[0];
     }
 
-    private bool ValidateWithCustomRoots(
+    /// <summary>
+    /// Requires the server's certificate chain for <paramref name="host"/> to contain a public key matching one of
+    /// <paramref name="pins"/>, after normal validation succeeds. Pins are SHA-256 hashes of the SubjectPublicKeyInfo,
+    /// base64-encoded, written <c>sha256/BASE64</c> (the format used by HPKP and OkHttp). Pin a backup key too, so a
+    /// key rotation does not lock clients out.
+    /// </summary>
+    /// <exception cref="ArgumentException">A pin is not <c>sha256/</c> followed by a base64 SHA-256 hash.</exception>
+    public ClientBuilder PinCertificate(string host, params string[] pins)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        if (pins.Length == 0)
+        {
+            throw new ArgumentException("At least one pin is required.", nameof(pins));
+        }
+        foreach (var pin in pins)
+        {
+            if (!pin.StartsWith("sha256/", StringComparison.Ordinal) || !IsSha256Base64(pin["sha256/".Length..]))
+            {
+                throw new ArgumentException($"'{pin}' is not a pin of the form sha256/BASE64 (a SHA-256 hash of the public key).", nameof(pins));
+            }
+        }
+
+        if (!_pins.TryGetValue(host, out var hostPins))
+        {
+            _pins[host] = hostPins = new HashSet<string>(StringComparer.Ordinal);
+        }
+        hostPins.UnionWith(pins.Select(p => p["sha256/".Length..]));
+        return Configure(nameof(PinCertificate), _ => { });
+    }
+
+    /// <summary>The <c>sha256/BASE64</c> pin of <paramref name="certificate"/>'s public key, e.g. to configure <see cref="PinCertificate"/>.</summary>
+    public static string ComputePin(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate) =>
+        "sha256/" + Spki(certificate);
+
+    private static string Spki(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate) =>
+        Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(certificate.PublicKey.ExportSubjectPublicKeyInfo()));
+
+    private static bool IsSha256Base64(string value)
+    {
+        Span<byte> buffer = stackalloc byte[48];
+        return Convert.TryFromBase64String(value, buffer, out var written) && written == 32;
+    }
+
+    /// <summary>
+    /// Validates server certificates when extra roots, pins or DangerAcceptInvalidCerts are configured.
+    /// </summary>
+    private bool ValidateServerCertificate(
         object sender, System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
         System.Security.Cryptography.X509Certificates.X509Chain? chain, System.Net.Security.SslPolicyErrors errors)
     {
-        if (errors == System.Net.Security.SslPolicyErrors.None)
+        if (certificate == null)
         {
-            return true;
+            return false;
         }
+        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
+        var elements = chain?.ChainElements.Select(e => e.Certificate).ToList() ?? [leaf];
+
+        var trusted = errors == System.Net.Security.SslPolicyErrors.None;
         // Only an untrusted chain can be fixed by extra roots; a wrong host name or a missing certificate cannot.
-        if (certificate == null || errors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
+        if (!trusted && errors == System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors && _rootCertificates.Count > 0)
+        {
+            using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
+            custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+            custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
+            custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+            custom.ChainPolicy.ExtraStore.AddRange(elements.ToArray());
+            trusted = custom.Build(leaf);
+            if (trusted)
+            {
+                elements = custom.ChainElements.Select(e => e.Certificate).ToList();
+            }
+        }
+        if (_acceptInvalidCerts)
+        {
+            trusted = true;
+        }
+        if (!trusted)
         {
             return false;
         }
 
-        using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
-        custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
-        custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
-        custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-        if (chain != null)
+        var host = (sender as System.Net.Security.SslStream)?.TargetHostName;
+        if (host == null || !_pins.TryGetValue(host, out var pins))
         {
-            foreach (var element in chain.ChainElements)
-            {
-                custom.ChainPolicy.ExtraStore.Add(element.Certificate);
-            }
+            return true;
         }
-        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
-        return custom.Build(leaf);
+        if (elements.Prepend(leaf).Any(e => pins.Contains(Spki(e))))
+        {
+            return true;
+        }
+        Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(_logger,
+            "Certificate pinning failed for {Host}: no certificate in the chain matches the configured pins", host);
+        return false;
     }
 
     /// <summary>
@@ -921,9 +988,9 @@ public sealed class ClientBuilder
         {
             apply(handler);
         }
-        if (_acceptInvalidCerts)
+        if (_acceptInvalidCerts || _rootCertificates.Count > 0 || _pins.Count > 0)
         {
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            handler.SslOptions.RemoteCertificateValidationCallback = ValidateServerCertificate;
         }
         return handler;
     }
