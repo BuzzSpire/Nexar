@@ -37,6 +37,7 @@ public sealed class ClientBuilder
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
     private readonly List<KeyValuePair<string, string>> _defaultQuery = new();
+    private readonly List<IContentSerializer> _serializers = new();
     private ClientOptions? _parent;
 
     internal ClientBuilder()
@@ -67,11 +68,33 @@ public sealed class ClientBuilder
             builder._defaultHeaders[name] = value;
         }
         builder._defaultQuery.AddRange(parent.DefaultQuery);
+        builder._serializers.AddRange(parent.Serializers);
         builder._redactHeaders.Clear();
         builder._redactHeaders.AddRange(parent.Redactor.Headers);
         builder._redactQueryParameters.Clear();
         builder._redactQueryParameters.AddRange(parent.Redactor.QueryParameters);
         return builder;
+    }
+
+    /// <summary>
+    /// Registers a body format. The first registered serializer is the default for <see cref="RequestBuilder.Serialized"/>,
+    /// and <c>As&lt;T&gt;()</c> picks the one that reads the response's <c>Content-Type</c>. A serializer for the same
+    /// media type replaces an earlier one.
+    /// </summary>
+    /// <example><c>.Serializer(XmlContentSerializer.Default)</c></example>
+    public ClientBuilder Serializer(IContentSerializer serializer)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        var index = _serializers.FindIndex(s => s.MediaType.Equals(serializer.MediaType, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+        {
+            _serializers[index] = serializer;
+        }
+        else
+        {
+            _serializers.Add(serializer);
+        }
+        return this;
     }
 
     /// <summary>
@@ -867,7 +890,8 @@ public sealed class ClientBuilder
             _rateLimiter,
             _cache,
             _cacheClock,
-            _defaultQuery.ToList());
+            _defaultQuery.ToList(),
+            _serializers.ToList());
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()

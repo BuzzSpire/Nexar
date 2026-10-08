@@ -385,6 +385,49 @@ public sealed class RequestBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sends <paramref name="value"/> serialized by <paramref name="serializer"/>, e.g.
+    /// <c>.Body(order, XmlContentSerializer.Default)</c>. The body is serialized once and can be retried.
+    /// </summary>
+    public RequestBuilder Body<T>(T value, IContentSerializer serializer)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        Capture(() =>
+        {
+            HttpContent content;
+            try
+            {
+                content = serializer.Serialize(value);
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                throw new ArgumentException($"{serializer.MediaType} serialization of {typeof(T).Name} failed: {ex.GetBaseException().Message}", ex);
+            }
+            using (content)
+            {
+                // Serialize once (synchronously, without blocking on a task) so every attempt sends the same bytes.
+                using var buffer = new MemoryStream();
+                using (var stream = content.ReadAsStream())
+                {
+                    stream.CopyTo(buffer);
+                }
+                var bytes = buffer.ToArray();
+                var contentType = content.Headers.ContentType?.ToString() ?? serializer.MediaType;
+                SetContent(() => CreateByteContent(bytes, contentType), isReplayable: true);
+            }
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> with the client's first registered serializer (<see cref="ClientBuilder.Serializer"/>),
+    /// or as JSON when none is registered.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder Serialized<T>(T value) =>
+        _client.Serializers.Count > 0 ? Body(value, _client.Serializers[0]) : Json(value);
+
     private void SetJsonContent(byte[] bytes) =>
         SetContent(() => CreateByteContent(bytes, "application/json; charset=utf-8"), isReplayable: true);
 

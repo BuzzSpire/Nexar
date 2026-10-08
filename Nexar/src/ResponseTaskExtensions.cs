@@ -147,6 +147,26 @@ public static class ResponseTaskExtensions
         return await result.Json(typeInfo, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Awaits the response, reads its body with <paramref name="serializer"/> and disposes it.
+    /// </summary>
+    public static async Task<T> As<T>(this Task<NexarResponse> response, IContentSerializer serializer, CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        return await result.As<T>(serializer, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Awaits the response, reads its body with the serializer matching its <c>Content-Type</c> and disposes it.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public static async Task<T> As<T>(this Task<NexarResponse> response, CancellationToken cancellationToken = default)
+    {
+        using var result = await response.ConfigureAwait(false);
+        return await result.As<T>(cancellationToken).ConfigureAwait(false);
+    }
+
     private static async IAsyncEnumerable<T> Drain<T>(Task<NexarResponse> response, Func<NexarResponse, CancellationToken, IAsyncEnumerable<T>> read,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {

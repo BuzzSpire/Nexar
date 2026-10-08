@@ -116,6 +116,7 @@ Disposing a derived client does not close the pool. Handler settings such as pro
 | `Timeout(t)` | Total time for one attempt: connecting, sending, receiving headers, and reading the body with `Text`/`Bytes`/`Json`. `Stream()` and the streaming readers are not limited. Default 100 s. |
 | `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)`, `DefaultQuery(name, value)` | Sent with every request (e.g. `?api-version=...`). A request header or query parameter with the same name replaces it. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
+| `Serializer(serializer)` | Registers a body format such as XML or MessagePack for `Serialized()` and `As<T>()`. |
 | `QueryStyle(arrays, nested)` | How `Query(object)` and `Form(object)` encode arrays and nested objects. |
 | `Retry(maxRetries, delay, exponentialBackoff, maxDelay, jitter)`, `RetryWhen(ctx => ...)`, `OnRetry(e => ...)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |
 | `Auth(authenticator)`, `Credentials(ICredentials)` | See [Authentication](#authentication). |
@@ -197,6 +198,17 @@ var upload = await client.Post("/upload")
 - `Compress(ContentEncoding.Gzip)` compresses the body on the fly.
 - Stream bodies are sent once and never retried.
 
+### XML and other formats
+
+Besides JSON, bodies can be written and read with any `IContentSerializer`. XML (`XmlContentSerializer`) ships in the box:
+
+```csharp
+await client.Post("/invoices").Body(invoice, XmlContentSerializer.Default).Send();
+var invoice = await client.Get("/invoices/7").Send().As<Invoice>();   // picked by Content-Type
+```
+
+Register your own format (Newtonsoft.Json, MessagePack, Protobuf, ...) with `.Serializer(mySerializer)`. `Serialized(value)` then writes with it, and `As<T>()` reads every content type it supports.
+
 ### Query and form styles
 
 `Query(object)` and `Form(object)` flatten objects with your JSON naming policy:
@@ -248,7 +260,7 @@ byte[] bytes = await response.Bytes();
 | `Headers`, `ContentHeaders`, `Header(name)`, `Trailers` | Raw headers |
 | `ContentType`, `ETag`, `LastModified`, `Location`, `RetryAfter`, `ContentRange`, `ContentLength`, `Links` | Typed headers; `Location` is absolute, `Links` comes from the RFC 8288 `Link` header |
 | `CacheStatus` | `Miss`, `Hit`, `Revalidated`, `Stale` or `None` |
-| `Text()`, `Text(fallbackEncoding)`, `Bytes()`, `Json<T>()`, `Stream()` | Read the body. Text uses the charset from `Content-Type`, else a BOM, else UTF-8. |
+| `Text()`, `Text(fallbackEncoding)`, `Bytes()`, `Json<T>()`, `As<T>()`, `As<T>(serializer)`, `Stream()` | Read the body. Text uses the charset from `Content-Type`, else a BOM, else UTF-8. `As<T>()` picks the serializer for the content type (JSON, XML or a registered one). |
 | `SaveTo(path)` | Atomic download to a file |
 | `Events()`, `JsonLines<T>()`, `JsonStream<T>()` | Streaming readers |
 | `ErrorForStatus()` | Throws for 4xx/5xx and returns the response otherwise |

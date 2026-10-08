@@ -51,6 +51,8 @@ public sealed partial class NexarClient : IDisposable
 
     internal IReadOnlyList<KeyValuePair<string, string>> DefaultQuery => _options.DefaultQuery;
 
+    internal IReadOnlyList<IContentSerializer> Serializers => _options.Serializers;
+
     /// <summary>
     /// Creates a client with different request defaults (base URL, headers, query, auth, timeout, retries, JSON
     /// options, ...) that shares this client's connection pool. Disposing it does not close the pool.
@@ -166,6 +168,7 @@ public sealed partial class NexarClient : IDisposable
         try
         {
             var response = await SendThroughCacheAsync(request, attempts, cancellationToken).ConfigureAwait(false);
+            response.Serializers = _options.Serializers;
             status = response.Status;
             if (status >= 400)
             {
@@ -573,7 +576,8 @@ internal sealed record ClientOptions(
     System.Threading.RateLimiting.RateLimiter? RateLimiter,
     IHttpCache? Cache,
     TimeProvider CacheClock,
-    IReadOnlyList<KeyValuePair<string, string>> DefaultQuery);
+    IReadOnlyList<KeyValuePair<string, string>> DefaultQuery,
+    IReadOnlyList<IContentSerializer> Serializers);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

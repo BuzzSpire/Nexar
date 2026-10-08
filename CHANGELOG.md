@@ -7,6 +7,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ### Added
 
+- Pluggable body formats (`IContentSerializer`, `ClientBuilder.Serializer`, `Body(value, serializer)`, `Serialized(value)`, `As<T>()`) with XML built in (`XmlContentSerializer`).
 - Client-level default query parameters (`DefaultQuery`), and `NexarClient.With(...)` to derive clients with other defaults that share the connection pool.
 - Retry jitter (`Retry(..., jitter: true)`), custom retry conditions (`RetryWhen`), a retry callback (`OnRetry`) and `IdempotencyKey()` for safely retried POSTs.
 
