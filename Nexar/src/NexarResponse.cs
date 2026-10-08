@@ -36,6 +36,9 @@ public sealed class NexarResponse : IDisposable
     /// <summary>True for a 2xx status.</summary>
     public bool IsSuccess => _response.IsSuccessStatusCode;
 
+    /// <summary>True for <c>304 Not Modified</c>, the answer to a conditional request whose cached copy is still valid.</summary>
+    public bool IsNotModified => _response.StatusCode == HttpStatusCode.NotModified;
+
     /// <summary>The reason phrase sent by the server, if any.</summary>
     public string? ReasonPhrase => _response.ReasonPhrase;
 
@@ -57,6 +60,48 @@ public sealed class NexarResponse : IDisposable
     /// <summary>The underlying response, for anything Nexar does not expose.</summary>
     public HttpResponseMessage HttpResponseMessage => _response;
 
+    /// <summary>True for <c>206 Partial Content</c>, the answer to a honored <c>Range</c> request.</summary>
+    public bool IsPartialContent => _response.StatusCode == HttpStatusCode.PartialContent;
+
+    /// <summary>The parsed <c>Content-Range</c> of a partial response, or null.</summary>
+    public ContentRangeHeaderValue? ContentRange => _response.Content.Headers.ContentRange;
+
+    /// <summary>The parsed <c>Content-Type</c>, or null.</summary>
+    public MediaTypeHeaderValue? ContentType => _response.Content.Headers.ContentType;
+
+    /// <summary>The parsed <c>ETag</c>, or null.</summary>
+    public EntityTagHeaderValue? ETag => _response.Headers.ETag;
+
+    /// <summary>The parsed <c>Last-Modified</c>, or null.</summary>
+    public DateTimeOffset? LastModified => _response.Content.Headers.LastModified;
+
+    /// <summary>The <c>Location</c> header resolved against <see cref="Url"/>, or null.</summary>
+    public Uri? Location => _response.Headers.Location is { } location
+        ? (location.IsAbsoluteUri ? location : new Uri(Url, location))
+        : null;
+
+    /// <summary>
+    /// How long the server asks to wait, from <c>Retry-After</c> given in seconds or as a date, or null.
+    /// </summary>
+    public TimeSpan? RetryAfter => _response.Headers.RetryAfter switch
+    {
+        { Delta: { } delta } => delta,
+        { Date: { } date } => date - DateTimeOffset.UtcNow is var wait && wait > TimeSpan.Zero ? wait : TimeSpan.Zero,
+        _ => null
+    };
+
+    /// <summary>
+    /// The value of any response or content header, with multiple values joined by <c>", "</c>; null if missing.
+    /// </summary>
+    public string? Header(string name)
+    {
+        if (_response.Headers.TryGetValues(name, out var values) || _response.Content.Headers.TryGetValues(name, out values))
+        {
+            return string.Join(", ", values);
+        }
+        return null;
+    }
+
     /// <summary>
     /// Throws if the status is 4xx or 5xx; otherwise returns this response.
     /// The exception keeps the start of the error body (<see cref="NexarException.ResponseBody"/>)
@@ -75,7 +120,14 @@ public sealed class NexarResponse : IDisposable
             .Concat(_response.Content.Headers)
             .GroupBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<string>)g.SelectMany(h => h.Value).ToList(), StringComparer.OrdinalIgnoreCase);
+        var problem = body != null && !truncated && NexarProblemDetails.IsProblemMediaType(ContentType?.MediaType)
+            ? NexarProblemDetails.TryParse(body)
+            : null;
         var message = $"HTTP {Status} ({ReasonPhrase ?? StatusCode.ToString()}) for {Url}";
+        if (problem?.Title != null)
+        {
+            message += $": {problem.Title}";
+        }
         Dispose();
 
         throw new NexarException(ErrorKind.Status, message, Url, StatusCode)
@@ -83,18 +135,58 @@ public sealed class NexarResponse : IDisposable
             ResponseBody = body,
             IsResponseBodyTruncated = truncated,
             ResponseHeaders = headers,
+            Problem = problem,
             JsonOptions = _jsonOptions
         };
     }
 
     /// <summary>
-    /// Reads the body as text, using the charset from <c>Content-Type</c>.
+    /// Reads the body as text, using the charset from <c>Content-Type</c>, else a byte order mark, else UTF-8.
     /// </summary>
-    public async Task<string> Text(CancellationToken cancellationToken = default)
+    /// <exception cref="NexarException">The charset is unknown (<see cref="ErrorKind.Decode"/>).</exception>
+    public Task<string> Text(CancellationToken cancellationToken = default) => Text(null, cancellationToken);
+
+    /// <summary>
+    /// Reads the body as text, using the charset from <c>Content-Type</c>, else a byte order mark,
+    /// else <paramref name="fallback"/>. Legacy code pages (windows-1254, Shift_JIS, ...) need
+    /// <c>Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)</c> at startup.
+    /// </summary>
+    /// <exception cref="NexarException">The charset is unknown (<see cref="ErrorKind.Decode"/>).</exception>
+    public async Task<string> Text(Encoding? fallback, CancellationToken cancellationToken = default)
     {
-        await BufferAsync(cancellationToken).ConfigureAwait(false);
-        return await _response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var bytes = await Bytes(cancellationToken).ConfigureAwait(false);
+
+        Encoding encoding;
+        var charset = ContentType?.CharSet?.Trim('"');
+        if (!string.IsNullOrEmpty(charset))
+        {
+            try
+            {
+                encoding = Encoding.GetEncoding(charset);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new NexarException(ErrorKind.Decode, $"Cannot decode text: unknown charset '{charset}'.", Url, innerException: ex);
+            }
+        }
+        else
+        {
+            encoding = DetectByteOrderMark(bytes) ?? fallback ?? Encoding.UTF8;
+        }
+
+        var preamble = encoding.Preamble;
+        var skip = preamble.Length > 0 && bytes.AsSpan().StartsWith(preamble) ? preamble.Length : 0;
+        return encoding.GetString(bytes, skip, bytes.Length - skip);
     }
+
+    private static Encoding? DetectByteOrderMark(ReadOnlySpan<byte> bytes) => bytes switch
+    {
+        [0xEF, 0xBB, 0xBF, ..] => Encoding.UTF8,
+        [0xFF, 0xFE, 0x00, 0x00, ..] => Encoding.UTF32,
+        [0xFF, 0xFE, ..] => Encoding.Unicode,
+        [0xFE, 0xFF, ..] => Encoding.BigEndianUnicode,
+        _ => null
+    };
 
     /// <summary>
     /// Reads the body as bytes.
@@ -117,6 +209,39 @@ public sealed class NexarResponse : IDisposable
             return await _response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            throw new NexarException(ErrorKind.Body, $"Failed to read the response body: {ex.Message}", Url, innerException: ex);
+        }
+    }
+
+    /// <summary>
+    /// Saves the body to <paramref name="path"/>, replacing it if it exists. The body is written to a temporary
+    /// file first and moved into place only when complete, so a failed download leaves no truncated file.
+    /// </summary>
+    public async Task SaveTo(string path, CancellationToken cancellationToken = default)
+    {
+        var temporary = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            await CopyToFileAsync(temporary, append: false, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, path, overwrite: true);
+        }
+        catch
+        {
+            RequestBuilder.TryDelete(temporary);
+            throw;
+        }
+    }
+
+    internal async Task CopyToFileAsync(string path, bool append, CancellationToken cancellationToken)
+    {
+        await using var file = new FileStream(path, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+        await using var body = await Stream(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await body.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HttpIOException ex)
         {
             throw new NexarException(ErrorKind.Body, $"Failed to read the response body: {ex.Message}", Url, innerException: ex);
         }

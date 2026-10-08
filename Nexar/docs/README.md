@@ -50,6 +50,7 @@ var client = new NexarClient();
 | `HttpMessageHandler(handler)` | Replaces the primary handler (tests, proxies). |
 | `HttpClient(httpClient)` | Uses an existing `HttpClient`, e.g. from `IHttpClientFactory`. Nexar never disposes it. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation. Local development only. |
+| `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | Logging and secret redaction. See [Observability](#observability). |
 
 ## Requests
 
@@ -67,10 +68,14 @@ var response = await client.Post("/orders")
 
 | Area | Methods |
 |---|---|
-| Headers | `Header(name, value)`, `Headers(pairs)` |
+| Headers | `Header(name, value)` (replace), `HeaderAppend(name, value)` (add another value), `Headers(pairs)`. Names must be RFC 9110 tokens and values must not contain CR, LF or other control characters; otherwise `Send()` throws `ErrorKind.Builder`. This makes header injection impossible. |
+| Negotiation | `Accept(mediaTypes...)`, `AcceptLanguage(languages...)` (validated, quality values included) |
+| Conditional | `IfNoneMatch(etag)`, `IfMatch(etag)`, `IfModifiedSince(date)`, `IfUnmodifiedSince(date)`; `res.IsNotModified` for 304 |
+| Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)`; `res.IsPartialContent`, `res.ContentRange` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
+| Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
-| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `Body(string \| byte[] \| Stream, contentType)` |
+| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| Stream, contentType)`, `Body(string, Encoding, mediaType)` |
 | Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(Version)` |
 
 ### Bodies
@@ -87,7 +92,25 @@ await client.Post("/upload")
     .Send();
 
 await client.Put("/files/report.csv").Body(File.OpenRead("report.csv"), "text/csv").Send();
+
+await client.Post("/legacy").Body(xml, Encoding.GetEncoding("iso-8859-9"), "application/xml").Send();  // charset is set for you
 ```
+
+### Files
+
+```csharp
+// Upload: the content type comes from the extension, and the file is reopened on retries.
+await client.Put("/files/report.pdf").File("report.pdf").Send();
+await client.Post("/upload").Multipart(new MultipartForm().File("doc", "report.pdf")).Send();
+
+// Download: written to a temporary file and moved into place only when complete.
+await client.Get("/files/report.pdf").Send().ErrorForStatus().SaveTo("report.pdf");
+
+// Resumable download: after a failure, the next call continues from where it stopped.
+long size = await client.Get("/big.iso").IfRange(etag).DownloadTo("big.iso", resume: true);
+```
+
+`DownloadTo` keeps the unfinished data in `{path}.partial` and asks for the rest with a `Range` request. If the server answers with the whole resource instead (no range support, or `If-Range` no longer matches), it starts over. If it answers with a range that does not continue the file, you get `ErrorKind.Body`.
 
 ## Authentication
 
@@ -158,9 +181,12 @@ public sealed class HmacAuth(byte[] key) : IAuthenticator
 using var res = await client.Get("/report").Send();
 
 Console.WriteLine(res.StatusCode);
-Console.WriteLine(res.Headers.ETag);
+Console.WriteLine(res.ETag);                 // typed headers: ContentType, ETag, LastModified,
+Console.WriteLine(res.Location);             // Location (absolute), RetryAfter
+Console.WriteLine(res.Header("X-RateLimit-Remaining"));   // any header, or null
 
-string text  = await res.Text();
+string text  = await res.Text();              // charset from Content-Type, else BOM, else UTF-8
+string old   = await res.Text(Encoding.Latin1); // fallback for bodies without a charset
 Report data  = await res.Json<Report>();
 byte[] bytes = await res.Bytes();
 Stream body  = await res.Stream();   // not buffered, for large downloads
@@ -170,6 +196,13 @@ Stream body  = await res.Stream();   // not buffered, for large downloads
 
 ```csharp
 var report = await client.Get("/report").Send().ErrorForStatus().Json<Report>();
+```
+
+`Stream()` chains too. The returned stream owns the response, so disposing it releases the connection:
+
+```csharp
+await using var body = await client.Get("/big.zip").Send().ErrorForStatus().Stream();
+await body.CopyToAsync(file);
 ```
 
 ## Errors
@@ -211,7 +244,13 @@ catch (NexarException e) when (e.IsStatus)
 {
     Console.WriteLine(e.ResponseBody);                         // first 64 KB of the error body
     Console.WriteLine(e.ResponseHeaders?["X-Request-Id"][0]);
-    var problem = e.Json<ProblemDetails>();                    // null if the body is not valid JSON
+    var custom = e.Json<MyApiError>();                         // null if the body is not valid JSON
+
+    if (e.Problem is { } problem)                              // RFC 9457 application/problem+json
+    {
+        Console.WriteLine($"{problem.Title}: {problem.Detail} ({problem.Type})");
+        var errors = problem.Extension<Dictionary<string, string[]>>("errors");
+    }
 }
 ```
 
@@ -242,6 +281,22 @@ await client.Post("/payments")
     .Retryable()
     .Send();
 ```
+
+## Observability
+
+Nexar publishes an `ActivitySource` and a `Meter`, both named `Nexar`, following the OpenTelemetry HTTP client semantic conventions:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource("Nexar"))
+    .WithMetrics(m => m.AddMeter("Nexar"));
+```
+
+- **Spans:** one per request, covering retries and re-authentication. Attributes: `http.request.method`, `url.full` (redacted), `server.address`, `server.port`, `http.response.status_code`, `http.request.resend_count` and `error.type`. Each re-send is a `nexar.resend` event with its reason (`503`, `timeout`, `connect`, `unauthorized`, ...). 4xx/5xx responses and failures mark the span as an error.
+- **Metrics:** `http.client.request.duration` (s), `http.client.active_requests`, and `nexar.client.resends` tagged by reason. Metrics never carry the URL.
+- **Logs:** with `.Logger(logger)`, the request line, status and duration go out at `Information`, re-sends at `Debug`, failures at `Warning`, and request/response headers at `Trace`.
+
+Secrets are redacted everywhere: the values of `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie` and API key headers set through `Auth`, and query parameters such as `api_key`, `access_token`, `token` and `client_secret`. You can add more with `.RedactHeaders(...)` and `.RedactQueryParameters(...)`.
 
 ## Testing
 

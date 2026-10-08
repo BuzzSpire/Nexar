@@ -24,6 +24,7 @@ public static class Auth
     public static IAuthenticator Bearer(string token)
     {
         ArgumentException.ThrowIfNullOrEmpty(token);
+        HeaderValidator.Validate("Authorization", token);
         return new DelegateAuthenticator((request, _) =>
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -45,6 +46,7 @@ public static class Auth
             {
                 throw new InvalidOperationException("The bearer token provider returned an empty token.");
             }
+            HeaderValidator.Validate("Authorization", token);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         });
     }
@@ -70,12 +72,13 @@ public static class Auth
     {
         ArgumentException.ThrowIfNullOrEmpty(headerName);
         ArgumentException.ThrowIfNullOrEmpty(apiKey);
+        HeaderValidator.Validate(headerName, apiKey);
         return new DelegateAuthenticator((request, _) =>
         {
             request.Headers.Remove(headerName);
             request.Headers.TryAddWithoutValidation(headerName, apiKey);
             return ValueTask.CompletedTask;
-        });
+        }, redactHeaders: [headerName]);
     }
 
     /// <summary>
@@ -93,7 +96,7 @@ public static class Auth
             builder.Query = query.Length == 0 ? pair : $"{query}&{pair}";
             request.RequestUri = builder.Uri;
             return ValueTask.CompletedTask;
-        });
+        }, redactQueryParameters: [parameterName]);
     }
 
     /// <summary>
@@ -148,8 +151,15 @@ public static class Auth
         return new DelegateAuthenticator(apply);
     }
 
-    private sealed class DelegateAuthenticator(Func<HttpRequestMessage, CancellationToken, ValueTask> apply) : IAuthenticator
+    private sealed class DelegateAuthenticator(
+        Func<HttpRequestMessage, CancellationToken, ValueTask> apply,
+        string[]? redactHeaders = null,
+        string[]? redactQueryParameters = null) : IAuthenticator, IRedactionHints
     {
+        public IReadOnlyCollection<string> Headers { get; } = redactHeaders ?? [];
+
+        public IReadOnlyCollection<string> QueryParameters { get; } = redactQueryParameters ?? [];
+
         public ValueTask AuthenticateAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => apply(request, cancellationToken);
     }
