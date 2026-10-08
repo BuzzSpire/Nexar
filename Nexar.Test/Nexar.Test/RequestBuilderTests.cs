@@ -1,354 +1,244 @@
-using Nexar.Configuration;
-using Nexar.Models;
+using System.Text;
 
 namespace Nexar.Test;
 
-/// <summary>
-/// Unit tests for NexarRequestBuilder (Fluent API)
-/// </summary>
-public class RequestBuilderTests : IDisposable
+public class RequestBuilderTests
 {
-    private readonly global::Nexar.Nexar _nexar;
-
-    public RequestBuilderTests()
+    [Theory]
+    [InlineData("https://api.test", "/users", "https://api.test/users")]
+    [InlineData("https://api.test/", "users", "https://api.test/users")]
+    [InlineData("https://api.test/v1/", "/users/1", "https://api.test/v1/users/1")]
+    [InlineData("https://api.test/v1", "", "https://api.test/v1")]
+    public async Task JoinsRelativeUrlsToBaseUrl(string baseUrl, string path, string expected)
     {
-        var config = new NexarConfig
-        {
-            BaseUrl = "https://jsonplaceholder.typicode.com"
-        };
-        _nexar = new global::Nexar.Nexar(config);
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler, b => b.BaseUrl(baseUrl));
+
+        await client.Get(path).Send();
+
+        Assert.Equal(expected, handler.Last.Url.ToString());
     }
 
     [Fact]
-    public async Task RequestBuilder_WithUrl_MakesRequest()
+    public async Task AbsoluteUrlBypassesBaseUrl()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .GetAsync<Post>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.NotNull(response.Data);
+        await client.Get("https://other.test/x").Send();
+
+        Assert.Equal("https://other.test/x", handler.Last.Url.ToString());
     }
 
     [Fact]
-    public async Task RequestBuilder_WithHeader_AddsHeader()
+    public async Task UsesTheRequestedMethod()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .WithHeader("Accept", "application/json")
-            .GetAsync<Post>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
+        await client.Get("/").Send();
+        await client.Post("/").Send();
+        await client.Put("/").Send();
+        await client.Patch("/").Send();
+        await client.Delete("/").Send();
+        await client.Head("/").Send();
+        await client.Request(HttpMethod.Options, "/").Send();
+
+        Assert.Equal(
+            new[] { HttpMethod.Get, HttpMethod.Post, HttpMethod.Put, HttpMethod.Patch, HttpMethod.Delete, HttpMethod.Head, HttpMethod.Options },
+            handler.Requests.Select(r => r.Method));
     }
 
     [Fact]
-    public async Task RequestBuilder_WithQuery_AddsQueryParameter()
+    public async Task EncodesQueryParameters()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts")
-            .WithQuery("userId", "1")
-            .GetAsync<Post[]>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.NotNull(response.Data);
+        await client.Get("/search")
+            .Query("q", "a b&c")
+            .Query("limit", 10)
+            .Query("price", 1.5)
+            .Query("exact", true)
+            .Query("skipped", null)
+            .Send();
+
+        Assert.Equal("?q=a%20b%26c&limit=10&price=1.5&exact=true", handler.Last.Url.Query);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithMultipleQueries_AddsAllParameters()
+    public async Task AppendsQueryToExistingQueryString()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts")
-            .WithQuery("userId", "1")
-            .WithQuery("_limit", "5")
-            .GetAsync<Post[]>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.NotNull(response.Data);
+        await client.Get("/search?a=1").Query("b", 2).Send();
+
+        Assert.Equal("?a=1&b=2", handler.Last.Url.Query);
     }
 
     [Fact]
-    public async Task RequestBuilder_PostAsync_SendsData()
+    public async Task QueryFromObjectUsesJsonNamingAndRepeatsArrays()
     {
-        // Arrange
-        var newPost = new
-        {
-            title = "Test Post",
-            body = "This is a test",
-            userId = 1
-        };
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts")
-            .PostAsync<Post>(newPost);
+        await client.Get("/items")
+            .Query(new { PageSize = 20, Ids = new[] { 1, 2 }, Filter = (string?)null })
+            .Send();
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.Equal(201, response.Status);
+        Assert.Equal("?pageSize=20&ids=1&ids=2", handler.Last.Url.Query);
     }
 
     [Fact]
-    public async Task RequestBuilder_PutAsync_UpdatesData()
+    public async Task QueryFromDictionary()
     {
-        // Arrange
-        var updatedPost = new
-        {
-            id = 1,
-            title = "Updated Post",
-            body = "This is updated",
-            userId = 1
-        };
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .PutAsync<Post>(updatedPost);
+        await client.Get("/items").Query(new Dictionary<string, string> { ["a"] = "1" }).Send();
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
+        Assert.Equal("?a=1", handler.Last.Url.Query);
     }
 
     [Fact]
-    public async Task RequestBuilder_DeleteAsync_DeletesResource()
+    public async Task RequestHeadersOverrideDefaultHeaders()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .DeleteAsync<object>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler, b => b
+            .DefaultHeader("X-Env", "default")
+            .DefaultHeader("X-Keep", "kept")
+            .UserAgent("nexar-tests"));
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
+        await client.Get("/").Header("x-env", "override").Send();
+
+        Assert.Equal("override", handler.Last.Headers["X-Env"]);
+        Assert.Equal("kept", handler.Last.Headers["X-Keep"]);
+        Assert.Equal("nexar-tests", handler.Last.Headers["User-Agent"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithBearerToken_AddsAuthHeader()
+    public async Task BearerAuth()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .WithBearerToken("test-token-123")
-            .GetAsync<Post>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        // The request will succeed even with invalid token for this test API
+        await client.Get("/").BearerAuth("token123").Send();
+
+        Assert.Equal("Bearer token123", handler.Last.Headers["Authorization"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithBasicAuth_AddsAuthHeader()
+    public async Task BasicAuth()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .WithBasicAuth("username", "password")
-            .GetAsync<Post>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
-        // The request will succeed even with invalid credentials for this test API
+        await client.Get("/").BasicAuth("user", "pass").Send();
+
+        var expected = Convert.ToBase64String(Encoding.UTF8.GetBytes("user:pass"));
+        Assert.Equal($"Basic {expected}", handler.Last.Headers["Authorization"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithApiKey_AddsCustomHeader()
+    public async Task JsonBodyUsesCamelCaseByDefault()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts/1")
-            .WithApiKey("X-API-Key", "test-api-key")
-            .GetAsync<Post>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(response);
+        await client.Post("/users").Json(new { FirstName = "Ada" }).Send();
+
+        Assert.Equal("{\"firstName\":\"Ada\"}", handler.Last.Body);
+        Assert.Equal("application/json; charset=utf-8", handler.Last.ContentHeaders["Content-Type"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_ChainedMethods_WorksCorrectly()
+    public async Task JsonOptionsCanBeCustomized()
     {
-        // Act
-        var response = await _nexar.Request()
-            .Url("/posts")
-            .WithHeader("Accept", "application/json")
-            .WithHeader("User-Agent", "Nexar-Test/1.0")
-            .WithQuery("userId", "1")
-            .WithQuery("_limit", "3")
-            .GetAsync<Post[]>();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler, b => b.JsonOptions(o => o.PropertyNamingPolicy = null));
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.NotNull(response.Data);
+        await client.Post("/users").Json(new { FirstName = "Ada" }).Send();
+
+        Assert.Equal("{\"FirstName\":\"Ada\"}", handler.Last.Body);
     }
 
     [Fact]
-    public void RequestBuilder_ReturnsNewInstance()
+    public async Task FormBody()
     {
-        // Act
-        var builder1 = _nexar.Request();
-        var builder2 = _nexar.Request();
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Assert
-        Assert.NotNull(builder1);
-        Assert.NotNull(builder2);
-        Assert.NotSame(builder1, builder2);
+        await client.Post("/login").Form(new { UserName = "ada", Remember = true }).Send();
+
+        Assert.Equal("userName=ada&remember=true", handler.Last.Body);
+        Assert.Equal("application/x-www-form-urlencoded", handler.Last.ContentHeaders["Content-Type"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithContentType_FormUrlEncoded()
+    public async Task MultipartBody()
     {
-        // Arrange
-        var formData = new Dictionary<string, string>
-        {
-            { "key1", "value1" },
-            { "key2", "value2" }
-        };
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Act
-        var response = await _nexar.Request()
-            .Url("https://httpbin.org/post")
-            .WithBody(formData)
-            .WithContentType(ContentType.FormUrlEncoded)
-            .PostAsync<string>();
+        await client.Post("/upload")
+            .Multipart(new MultipartForm()
+                .Text("title", "Holiday")
+                .File("photo", new byte[] { 1, 2, 3 }, "beach.jpg", "image/jpeg"))
+            .Send();
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.Contains("application/x-www-form-urlencoded", response.RawContent);
+        Assert.StartsWith("multipart/form-data", handler.Last.ContentHeaders["Content-Type"]);
+        Assert.Contains("name=title", handler.Last.Body);
+        Assert.Contains("Holiday", handler.Last.Body);
+        Assert.Contains("filename=beach.jpg", handler.Last.Body);
+        Assert.Contains("image/jpeg", handler.Last.Body);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithContentType_FormData()
+    public async Task TextBody()
     {
-        // Arrange
-        var formData = new Dictionary<string, object>
-        {
-            { "field", "value" },
-            { "file", System.Text.Encoding.UTF8.GetBytes("content") }
-        };
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Act
-        var response = await _nexar.Request()
-            .Url("https://httpbin.org/post")
-            .WithBody(formData)
-            .WithContentType(ContentType.FormData)
-            .PostAsync<string>();
+        await client.Post("/notes").Body("hello").Send();
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
-        Assert.Contains("multipart/form-data", response.RawContent);
+        Assert.Equal("hello", handler.Last.Body);
+        Assert.Equal("text/plain; charset=utf-8", handler.Last.ContentHeaders["Content-Type"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithContentType_Binary()
+    public async Task BinaryBody()
     {
-        // Arrange
-        var binaryData = System.Text.Encoding.UTF8.GetBytes("Binary test data");
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-        // Act
-        var response = await _nexar.Request()
-            .Url("https://httpbin.org/post")
-            .WithBody(binaryData)
-            .WithContentType(ContentType.Binary)
-            .PostAsync<string>();
+        await client.Put("/blob").Body(Encoding.UTF8.GetBytes("raw")).Send();
 
-        // Assert
-        Assert.NotNull(response);
-        Assert.True(response.IsSuccess);
+        Assert.Equal("raw", handler.Last.Body);
+        Assert.Equal("application/octet-stream", handler.Last.ContentHeaders["Content-Type"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithoutUrl_ThrowsInvalidOperationException()
+    public async Task StreamBody()
     {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .GetAsync<object>();
-        });
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
+
+        await client.Put("/blob").Body(new MemoryStream(Encoding.UTF8.GetBytes("streamed")), "text/csv").Send();
+
+        Assert.Equal("streamed", handler.Last.Body);
+        Assert.Equal("text/csv", handler.Last.ContentHeaders["Content-Type"]);
     }
 
     [Fact]
-    public async Task RequestBuilder_WithEmptyUrl_ThrowsInvalidOperationException()
+    public async Task ContentTypeHeaderOverridesBodyContentType()
     {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .Url("")
-                .GetAsync<object>();
-        });
-    }
+        var handler = new FakeHandler();
+        using var client = TestClient.Create(handler);
 
-    [Fact]
-    public async Task RequestBuilder_WithoutUrl_PostAsync_ThrowsInvalidOperationException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .PostAsync<object>();
-        });
-    }
+        await client.Post("/").Json(new { a = 1 }).Header("Content-Type", "application/vnd.api+json").Send();
 
-    [Fact]
-    public async Task RequestBuilder_WithoutUrl_PutAsync_ThrowsInvalidOperationException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .PutAsync<object>();
-        });
-    }
-
-    [Fact]
-    public async Task RequestBuilder_WithoutUrl_DeleteAsync_ThrowsInvalidOperationException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .DeleteAsync<object>();
-        });
-    }
-
-    [Fact]
-    public async Task RequestBuilder_WithoutUrl_PatchAsync_ThrowsInvalidOperationException()
-    {
-        // Act & Assert
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await _nexar.Request()
-                .PatchAsync<object>();
-        });
-    }
-
-    public void Dispose()
-    {
-        _nexar?.Dispose();
-    }
-
-    // Helper class for testing
-    private class Post
-    {
-        public int Id { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public string Body { get; set; } = string.Empty;
-        public int UserId { get; set; }
+        Assert.Equal("application/vnd.api+json", handler.Last.ContentHeaders["Content-Type"]);
+        Assert.False(handler.Last.Headers.ContainsKey("Content-Type"));
     }
 }
