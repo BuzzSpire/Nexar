@@ -146,6 +146,21 @@ public sealed class ClientBuilder
         return Configure(nameof(Redirects), _ => { });
     }
 
+    /// <summary>
+    /// Keeps cookies from <c>Set-Cookie</c> responses and sends them on later requests to the same site.
+    /// Without this, the client is stateless and only sends a <c>Cookie</c> header you set yourself.
+    /// </summary>
+    /// <param name="cookies">A jar to inspect or pre-fill; a new one is used if null.</param>
+    public ClientBuilder CookieStore(System.Net.CookieContainer? cookies = null)
+    {
+        var container = cookies ?? new System.Net.CookieContainer();
+        return Configure(nameof(CookieStore), h =>
+        {
+            h.UseCookies = true;
+            h.CookieContainer = container;
+        });
+    }
+
     private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
     {
         _handlerSettings[setting] = apply;
@@ -329,7 +344,9 @@ public sealed class ClientBuilder
         {
             AutomaticDecompression = System.Net.DecompressionMethods.All,
             AllowAutoRedirect = _redirects.MaxRedirects > 0,
-            MaxAutomaticRedirections = Math.Max(_redirects.MaxRedirects, 1)
+            MaxAutomaticRedirections = Math.Max(_redirects.MaxRedirects, 1),
+            // Stateless unless CookieStore() is used.
+            UseCookies = false
         };
         foreach (var apply in _handlerSettings.Values)
         {

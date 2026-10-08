@@ -41,6 +41,7 @@ var client = new NexarClient();
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(TimeSpan)` | Total time for one attempt: sending, receiving headers, and reading the body with `Text()`/`Bytes()`/`Json<T>()`. `Stream()` is not limited. Default 100 s. |
 | `Decompression(methods)` | Encodings to ask for and decode. Default: gzip, deflate and Brotli. |
+| `CookieStore(jar?)` | Keeps `Set-Cookie` cookies and sends them back. Without it the client is stateless. |
 | `Redirects(policy)` | `RedirectPolicy.Default` (up to 10 hops), `Limited(n)` or `None` (3xx returned as-is). Exceeding the limit throws `ErrorKind.Redirect`; HTTPS to HTTP is never followed. |
 | `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)` | Headers sent with every request. A request header with the same name wins. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | JSON settings. Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
