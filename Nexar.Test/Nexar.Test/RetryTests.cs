@@ -1,102 +1,123 @@
 using System.Net;
 using System.Text;
+using Nexar.Testing;
 
 namespace Nexar.Test;
 
+/// <summary>
+/// Written with <see cref="MockHttp"/> from Nexar.Testing, so the companion package is exercised by the suite.
+/// </summary>
 public class RetryTests
 {
+    private static NexarClient Client(MockHttp mock, int retries = 0, TimeSpan? delay = null) =>
+        mock.CreateClient(configure: b =>
+        {
+            if (retries > 0)
+            {
+                b.Retry(retries, delay ?? TimeSpan.Zero);
+            }
+        });
+
     [Fact]
     public async Task DoesNotRetryByDefault()
     {
-        var handler = new FakeHandler(HttpStatusCode.ServiceUnavailable);
-        using var client = TestClient.Create(handler);
+        var mock = new MockHttp();
+        mock.OnGet("/").Respond(HttpStatusCode.ServiceUnavailable);
+        using var client = Client(mock);
 
         using var res = await client.Get("/").Send();
 
-        Assert.Single(handler.Requests);
+        Assert.Single(mock.Requests);
     }
 
     [Fact]
     public async Task RetriesTransientStatusUntilSuccess()
     {
-        var statuses = new Queue<HttpStatusCode>(new[] { HttpStatusCode.ServiceUnavailable, HttpStatusCode.TooManyRequests, HttpStatusCode.OK });
-        var handler = new FakeHandler(_ => FakeHandler.Respond(statuses.Dequeue()));
-        using var client = TestClient.Create(handler, b => b.Retry(3, TimeSpan.Zero));
+        var mock = new MockHttp();
+        mock.OnGet("/")
+            .Respond(HttpStatusCode.ServiceUnavailable)
+            .Respond(HttpStatusCode.TooManyRequests)
+            .Respond(HttpStatusCode.OK)
+            .Times(3);
+        using var client = Client(mock, retries: 3);
 
         using var res = await client.Get("/").Send();
 
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        Assert.Equal(3, handler.Requests.Count);
+        mock.VerifyAllCalled();
     }
 
     [Fact]
     public async Task ReturnsLastResponseWhenRetriesAreExhausted()
     {
-        var handler = new FakeHandler(HttpStatusCode.BadGateway);
-        using var client = TestClient.Create(handler, b => b.Retry(2, TimeSpan.Zero));
+        var mock = new MockHttp();
+        mock.OnGet("/").Respond(HttpStatusCode.BadGateway).Times(3);
+        using var client = Client(mock, retries: 2);
 
         using var res = await client.Get("/").Send();
 
         Assert.Equal(HttpStatusCode.BadGateway, res.StatusCode);
-        Assert.Equal(3, handler.Requests.Count);
+        mock.VerifyAllCalled();
     }
 
     [Fact]
     public async Task DoesNotRetryNonTransientStatus()
     {
-        var handler = new FakeHandler(HttpStatusCode.NotFound);
-        using var client = TestClient.Create(handler, b => b.Retry(3, TimeSpan.Zero));
+        var mock = new MockHttp();
+        mock.OnGet("/").Respond(HttpStatusCode.NotFound).Times(1);
+        using var client = Client(mock, retries: 3);
 
         using var res = await client.Get("/").Send();
 
-        Assert.Single(handler.Requests);
+        mock.VerifyAllCalled();
     }
 
     [Fact]
     public async Task RetriesConnectionErrorsAndResendsTheBody()
     {
-        var attempts = 0;
-        var handler = new FakeHandler(_ => ++attempts < 3
-            ? throw new HttpRequestException(HttpRequestError.ConnectionError, "refused")
-            : FakeHandler.Respond(HttpStatusCode.OK));
-        using var client = TestClient.Create(handler, b => b.Retry(3, TimeSpan.Zero));
+        var refused = new HttpRequestException(HttpRequestError.ConnectionError, "refused");
+        var mock = new MockHttp();
+        mock.OnPost("/").Throws(refused).Throws(refused).Respond(HttpStatusCode.OK);
+        using var client = Client(mock, retries: 3);
 
         using var res = await client.Post("/").Json(new { a = 1 }).Send();
 
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
-        Assert.Equal(3, handler.Requests.Count);
-        Assert.All(handler.Requests, r => Assert.Equal("{\"a\":1}", r.Body));
+        Assert.Equal(3, mock.Requests.Count);
+        Assert.All(mock.Requests, r => Assert.Equal("{\"a\":1}", r.Body));
     }
 
     [Fact]
     public async Task ThrowsAfterExhaustingRetriesOnConnectionErrors()
     {
-        var handler = new FakeHandler((_, _) =>
-            throw new HttpRequestException(HttpRequestError.ConnectionError, "refused"));
-        using var client = TestClient.Create(handler, b => b.Retry(2, TimeSpan.Zero));
+        var mock = new MockHttp();
+        mock.OnGet("/").Throws(new HttpRequestException(HttpRequestError.ConnectionError, "refused")).Times(3);
+        using var client = Client(mock, retries: 2);
 
         var ex = await Assert.ThrowsAsync<NexarException>(() => client.Get("/").Send());
 
         Assert.True(ex.IsConnect);
-        Assert.Equal(3, handler.Requests.Count);
+        mock.VerifyAllCalled();
     }
 
     [Fact]
     public async Task NeverRetriesStreamBodies()
     {
-        var handler = new FakeHandler(HttpStatusCode.ServiceUnavailable);
-        using var client = TestClient.Create(handler, b => b.Retry(3, TimeSpan.Zero));
+        var mock = new MockHttp();
+        mock.OnPut("/").Respond(HttpStatusCode.ServiceUnavailable).Times(1);
+        using var client = Client(mock, retries: 3);
 
         using var res = await client.Put("/").Body(new MemoryStream(Encoding.UTF8.GetBytes("x"))).Send();
 
-        Assert.Single(handler.Requests);
+        mock.VerifyAllCalled();
     }
 
     [Fact]
     public async Task UsesExponentialBackoff()
     {
-        var handler = new FakeHandler(HttpStatusCode.ServiceUnavailable);
-        using var client = TestClient.Create(handler, b => b.Retry(3, TimeSpan.FromMilliseconds(40)));
+        var mock = new MockHttp();
+        mock.OnGet("/").Respond(HttpStatusCode.ServiceUnavailable);
+        using var client = Client(mock, retries: 3, delay: TimeSpan.FromMilliseconds(40));
 
         var started = DateTime.UtcNow;
         using var res = await client.Get("/").Send();

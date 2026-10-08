@@ -369,14 +369,32 @@ Secrets are redacted everywhere: the values of `Authorization`, `Proxy-Authoriza
 
 ## Testing
 
-Plug in your own handler; no mocking library needed:
+The companion package `BuzzSpire.Nexar.Testing` provides a fluent mock handler:
+
+```bash
+dotnet add package BuzzSpire.Nexar.Testing
+```
 
 ```csharp
-var client = NexarClient.Builder()
-    .BaseUrl("https://api.test")
-    .HttpMessageHandler(new MyFakeHandler())
-    .Build();
+using Nexar.Testing;
+
+var mock = new MockHttp();
+mock.OnGet("/users/1").RespondJson(new { id = 1, name = "Ada" });
+mock.OnPost("/users").WithJsonBody<User>(u => u.Name == "Ada").Respond(HttpStatusCode.Created);
+mock.OnGet("/flaky").Respond(HttpStatusCode.ServiceUnavailable).Respond(HttpStatusCode.OK).Times(2);
+mock.OnGet("/down").Throws(new HttpRequestException(HttpRequestError.ConnectionError));
+mock.OnGet("/slow").Delay(TimeSpan.FromSeconds(30)).Respond();
+
+using var client = mock.CreateClient(configure: b => b.Retry(1));
+// ... exercise the code under test ...
+
+mock.VerifyAllCalled();                // every route called (the expected number of times)
+var sent = mock.Requests[0];           // method, URL, headers, body, .Json<T>()
 ```
+
+Routes match on method, path (a trailing `*` is a wildcard), query, headers, body or a custom predicate. They are tried in order, and successive `Respond` calls form a sequence. An unmatched request throws `MockHttpException`, listing the registered routes.
+
+You can also plug in any `HttpMessageHandler` with `.HttpMessageHandler(handler)`.
 
 ## Migrating from 2.x
 

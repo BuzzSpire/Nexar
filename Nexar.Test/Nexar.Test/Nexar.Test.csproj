@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\\..\\Nexar\\Nexar.csproj" />
+    <ProjectReference Include="..\..\Nexar.Testing\Nexar.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

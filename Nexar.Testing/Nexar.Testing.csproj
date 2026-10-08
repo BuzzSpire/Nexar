@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Nexar.Testing</RootNamespace>
+    <Version>2026.1008.0</Version>
+    <PackageId>BuzzSpire.Nexar.Testing</PackageId>
+    <Title>Nexar.Testing - Mock HTTP for Nexar</Title>
+    <Description>A fluent mock HttpMessageHandler for testing code that uses Nexar: match requests by method, path, query, headers and body, answer with sequences, delays or exceptions, and verify that every route was called.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
+    <PackageTags>http;testing;mock;nexar</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexar\Nexar.csproj" />
+  </ItemGroup>
+
+</Project>
