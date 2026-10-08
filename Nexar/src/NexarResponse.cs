@@ -17,10 +17,12 @@ public sealed class NexarResponse : IDisposable
     private readonly HttpResponseMessage _response;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly CancellationTokenSource _deadline;
+    private readonly long? _maxBodySize;
     private bool _buffered;
 
-    internal NexarResponse(HttpResponseMessage response, Uri url, JsonSerializerOptions jsonOptions, CancellationTokenSource deadline)
+    internal NexarResponse(HttpResponseMessage response, Uri url, JsonSerializerOptions jsonOptions, CancellationTokenSource deadline, long? maxBodySize = null)
     {
+        _maxBodySize = maxBodySize;
         _response = response;
         _jsonOptions = jsonOptions;
         _deadline = deadline;
@@ -241,17 +243,40 @@ public sealed class NexarResponse : IDisposable
 
     internal async Task CopyToFileAsync(string path, bool append, CancellationToken cancellationToken)
     {
+        ThrowIfDeclaredTooLarge();
         await using var file = new FileStream(path, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
         await using var body = await Stream(cancellationToken).ConfigureAwait(false);
+        var buffer = new byte[81920];
+        long total = 0;
         try
         {
-            await body.CopyToAsync(file, cancellationToken).ConfigureAwait(false);
+            int read;
+            while ((read = await body.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+            {
+                total += read;
+                if (total > _maxBodySize)
+                {
+                    throw TooLarge();
+                }
+                await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (HttpIOException ex)
         {
             throw new NexarException(ErrorKind.Body, $"Failed to read the response body: {ex.Message}", Url, innerException: ex);
         }
     }
+
+    private void ThrowIfDeclaredTooLarge()
+    {
+        if (_response.Content.Headers.ContentLength > _maxBodySize)
+        {
+            throw TooLarge();
+        }
+    }
+
+    private NexarException TooLarge() =>
+        new(ErrorKind.Body, $"The response body from {Url} is larger than the limit of {_maxBodySize} bytes.", Url);
 
     /// <summary>
     /// Deserializes the body as JSON using the client's JSON options.
@@ -292,14 +317,27 @@ public sealed class NexarResponse : IDisposable
             return;
         }
 
+        ThrowIfDeclaredTooLarge();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _deadline.Token);
         try
         {
-            await _response.Content.LoadIntoBufferAsync(linked.Token).ConfigureAwait(false);
+            if (_maxBodySize is { } max)
+            {
+                await _response.Content.LoadIntoBufferAsync(Math.Min(max, int.MaxValue), linked.Token).ConfigureAwait(false);
+            }
+            else
+            {
+                await _response.Content.LoadIntoBufferAsync(linked.Token).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             throw new NexarException(ErrorKind.Timeout, $"Reading the response body from {Url} timed out.", Url, innerException: ex);
+        }
+        catch (HttpRequestException ex) when (_maxBodySize != null && ex.InnerException is null or IOException { InnerException: null })
+        {
+            // LoadIntoBufferAsync reports an exceeded limit as an HttpRequestException without a transport cause.
+            throw new NexarException(ErrorKind.Body, $"The response body from {Url} is larger than the limit of {_maxBodySize} bytes.", Url, innerException: ex);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {

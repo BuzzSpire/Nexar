@@ -30,6 +30,9 @@ internal sealed class PreparedRequest
 
     public bool ExpectContinue { get; init; }
 
+    /// <summary>The largest body Text()/Bytes()/Json()/SaveTo() may read, or null for no limit.</summary>
+    public long? MaxResponseSize { get; init; }
+
     public HttpRequestMessage CreateMessage()
     {
         var message = new HttpRequestMessage(Method, Url);

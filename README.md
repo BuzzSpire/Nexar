@@ -46,6 +46,7 @@ var client = new NexarClient();
 | `HttpVersion(version, policy)` | Default HTTP version and fallback policy for all requests, e.g. HTTP/2 or HTTP/3 only. |
 | `ExpectContinue()`, `ExpectContinueTimeout(t)` | Send `Expect: 100-continue` with bodies so servers can reject large uploads early. |
 | `Http2MultipleConnections()`, `Http2KeepAlive(interval, timeout)`, `Http3MultipleConnections()` | HTTP/2 and HTTP/3 connection tuning for high-throughput services. |
+| `MaxResponseSize(bytes)` | Fail with `ErrorKind.Body` instead of buffering huge bodies (`Text`/`Bytes`/`Json`/`SaveTo`). No limit by default. |
 | `Decompression(methods)` | Encodings to ask for and decode. Default: gzip, deflate and Brotli. |
 | `Proxy(url, credentials?)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP(S) or SOCKS proxy; by default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
 | `CookieStore(jar?)` | Keeps `Set-Cookie` cookies and sends them back. Without it the client is stateless. |
@@ -86,7 +87,7 @@ var response = await client.Post("/orders")
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
 | Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream, contentType)`, `Body(string, Encoding, mediaType)`, `Body(() => httpContent)` (fresh content per attempt), `Body(httpContent)` (sent once) |
-| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)` |
+| Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)`, `Compress(ContentEncoding.Gzip \| Deflate \| Brotli)`, `MaxResponseSize(bytes)` |
 
 ### Bodies
 

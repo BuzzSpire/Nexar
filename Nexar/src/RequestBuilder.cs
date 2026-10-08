@@ -25,6 +25,8 @@ public sealed class RequestBuilder
     private Version? _version;
     private HttpVersionPolicy? _versionPolicy;
     private bool? _expectContinue;
+    private ContentEncoding? _compression;
+    private long? _maxResponseSize;
     private IAuthenticator? _auth;
     private bool _authOverridden;
     private bool? _retryable;
@@ -545,6 +547,28 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Compresses the body while sending it and sets <c>Content-Encoding</c>, for APIs that accept compressed
+    /// uploads (telemetry, log ingestion, bulk imports). The body stays retryable.
+    /// </summary>
+    public RequestBuilder Compress(ContentEncoding encoding = ContentEncoding.Gzip)
+    {
+        _compression = encoding;
+        return this;
+    }
+
+    /// <summary>
+    /// Fails reading the body with <see cref="ErrorKind.Body"/> if it is larger than <paramref name="maxBytes"/>,
+    /// overriding <see cref="ClientBuilder.MaxResponseSize"/>. Applies to <c>Text()</c>, <c>Bytes()</c>, <c>Json()</c>
+    /// and <c>SaveTo()</c>; <c>Stream()</c> is up to the caller.
+    /// </summary>
+    public RequestBuilder MaxResponseSize(long maxBytes)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxBytes);
+        _maxResponseSize = maxBytes;
+        return this;
+    }
+
+    /// <summary>
     /// Sends <c>Expect: 100-continue</c> with the body, so the server can reject the request (auth, size, quota)
     /// before the body is uploaded. Overrides <see cref="ClientBuilder.ExpectContinue"/>.
     /// </summary>
@@ -589,12 +613,20 @@ public sealed class RequestBuilder
             : _headers.ContainsKey("Authorization") ? null : _client.Authenticator;
 
         var defaults = _client.RequestDefaults;
+        var content = _content;
+        if (content != null && _compression is { } encoding)
+        {
+            var uncompressed = content;
+            content = () => new CompressedContent(uncompressed(), encoding);
+        }
+
         return new PreparedRequest
         {
             Method = _method,
             Url = url,
             Headers = headers,
-            Content = _content,
+            Content = content,
+            MaxResponseSize = _maxResponseSize ?? defaults.MaxResponseSize,
             IsReplayable = _isReplayable,
             IsIdempotent = _retryable ?? IsIdempotent(_method),
             Authenticator = authenticator,

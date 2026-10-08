@@ -292,7 +292,7 @@ public sealed class NexarClient : IDisposable
                 continue;
             }
 
-            return new NexarResponse(response, request.Url, JsonOptions, deadline);
+            return new NexarResponse(response, request.Url, JsonOptions, deadline, request.MaxResponseSize);
         }
     }
 
@@ -475,7 +475,7 @@ internal sealed record ClientOptions(
 /// <summary>
 /// Client-wide defaults that individual requests can override.
 /// </summary>
-internal sealed record RequestDefaults(Version? Version, HttpVersionPolicy? VersionPolicy, bool ExpectContinue)
+internal sealed record RequestDefaults(Version? Version, HttpVersionPolicy? VersionPolicy, bool ExpectContinue, long? MaxResponseSize)
 {
-    public static readonly RequestDefaults None = new(null, null, false);
+    public static readonly RequestDefaults None = new(null, null, false, null);
 }
