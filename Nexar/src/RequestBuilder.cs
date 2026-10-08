@@ -40,7 +40,11 @@ public sealed class RequestBuilder
     /// </summary>
     public RequestBuilder Header(string name, string value)
     {
-        _headers[name] = value;
+        Capture(() =>
+        {
+            HeaderValidator.Validate(name, value);
+            _headers[name] = value;
+        });
         return this;
     }
 
@@ -51,7 +55,7 @@ public sealed class RequestBuilder
     {
         foreach (var header in headers)
         {
-            _headers[header.Key] = header.Value;
+            Header(header.Key, header.Value);
         }
         return this;
     }

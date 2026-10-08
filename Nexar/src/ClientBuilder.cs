@@ -197,6 +197,18 @@ public sealed class ClientBuilder
             throw new NexarException(ErrorKind.Builder, $"Base URL '{_baseUrl}' is not an absolute http(s) URL.");
         }
 
+        foreach (var (name, value) in _defaultHeaders)
+        {
+            try
+            {
+                HeaderValidator.Validate(name, value);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new NexarException(ErrorKind.Builder, $"Invalid default header: {ex.Message}", innerException: ex);
+            }
+        }
+
         var configuresDefaultHandler = _acceptInvalidCerts || _credentials != null || _decompression != null;
 
         if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || configuresDefaultHandler))

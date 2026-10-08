@@ -24,6 +24,7 @@ public static class Auth
     public static IAuthenticator Bearer(string token)
     {
         ArgumentException.ThrowIfNullOrEmpty(token);
+        HeaderValidator.Validate("Authorization", token);
         return new DelegateAuthenticator((request, _) =>
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -45,6 +46,7 @@ public static class Auth
             {
                 throw new InvalidOperationException("The bearer token provider returned an empty token.");
             }
+            HeaderValidator.Validate("Authorization", token);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         });
     }
@@ -70,6 +72,7 @@ public static class Auth
     {
         ArgumentException.ThrowIfNullOrEmpty(headerName);
         ArgumentException.ThrowIfNullOrEmpty(apiKey);
+        HeaderValidator.Validate(headerName, apiKey);
         return new DelegateAuthenticator((request, _) =>
         {
             request.Headers.Remove(headerName);
