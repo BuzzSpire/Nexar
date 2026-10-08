@@ -302,6 +302,45 @@ public sealed class ClientBuilder
         return custom.Build(leaf);
     }
 
+    /// <summary>
+    /// Limits how long establishing a connection (TCP connect and TLS handshake) may take, separately from
+    /// <see cref="Timeout"/>, so unreachable hosts fail fast while slow responses are still allowed.
+    /// A connect timeout raises <see cref="ErrorKind.Timeout"/>.
+    /// </summary>
+    public ClientBuilder ConnectTimeout(TimeSpan timeout)
+    {
+        ValidateTimeout(timeout);
+        return Configure(nameof(ConnectTimeout), h => h.ConnectTimeout = timeout);
+    }
+
+    /// <summary>
+    /// How long an idle pooled connection is kept for reuse. The platform default is 1 minute.
+    /// </summary>
+    public ClientBuilder PoolIdleTimeout(TimeSpan timeout)
+    {
+        ValidateTimeout(timeout);
+        return Configure(nameof(PoolIdleTimeout), h => h.PooledConnectionIdleTimeout = timeout);
+    }
+
+    /// <summary>
+    /// How long a pooled connection may live before it is replaced, so long-running services pick up DNS changes.
+    /// The platform default is unlimited.
+    /// </summary>
+    public ClientBuilder PoolConnectionLifetime(TimeSpan lifetime)
+    {
+        ValidateTimeout(lifetime);
+        return Configure(nameof(PoolConnectionLifetime), h => h.PooledConnectionLifetime = lifetime);
+    }
+
+    /// <summary>
+    /// The maximum number of simultaneous connections to one host (HTTP/1.1). The platform default is unlimited.
+    /// </summary>
+    public ClientBuilder MaxConnectionsPerHost(int max)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(max);
+        return Configure(nameof(MaxConnectionsPerHost), h => h.MaxConnectionsPerServer = max);
+    }
+
     private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
     {
         _handlerSettings[setting] = apply;

@@ -40,6 +40,7 @@ var client = new NexarClient();
 |---|---|
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(TimeSpan)` | Total time for one attempt: sending, receiving headers, and reading the body with `Text()`/`Bytes()`/`Json<T>()`. `Stream()` is not limited. Default 100 s. |
+| `ConnectTimeout(t)`, `PoolIdleTimeout(t)`, `PoolConnectionLifetime(t)`, `MaxConnectionsPerHost(n)` | Fail fast on unreachable hosts (TCP + TLS handshake), and tune connection reuse, e.g. a lifetime so DNS changes are picked up. |
 | `Decompression(methods)` | Encodings to ask for and decode. Default: gzip, deflate and Brotli. |
 | `Proxy(url, credentials?)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP(S) or SOCKS proxy; by default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
 | `CookieStore(jar?)` | Keeps `Set-Cookie` cookies and sends them back. Without it the client is stateless. |
