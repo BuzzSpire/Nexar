@@ -224,6 +224,18 @@ public sealed class NexarClient : IDisposable
 
             LogHeaders("Response", response.Headers, response.Content.Headers, authenticator);
 
+            // The default handler returns the last 3xx when it stops following redirects.
+            if (_options.RedirectLimit is { } limit && IsFollowableRedirect(response))
+            {
+                var location = response.Headers.Location;
+                var finalUrl = response.RequestMessage?.RequestUri ?? request.Url;
+                response.Dispose();
+                deadline.Dispose();
+                throw new NexarException(ErrorKind.Redirect,
+                    $"Redirect from {finalUrl} to {location} was not followed: more than {limit} redirects, or a redirect from HTTPS to HTTP.",
+                    finalUrl);
+            }
+
             // One re-send after a 401 if the authenticator can fix it; it does not use up a retry.
             if (response.StatusCode == HttpStatusCode.Unauthorized
                 && authenticator != null
@@ -367,6 +379,14 @@ public sealed class NexarClient : IDisposable
         HttpRequestError.SecureConnectionError or
         HttpRequestError.ProxyTunnelError;
 
+    private static bool IsFollowableRedirect(HttpResponseMessage response) =>
+        response.Headers.Location != null && response.StatusCode is
+            HttpStatusCode.MovedPermanently or
+            HttpStatusCode.Found or
+            HttpStatusCode.SeeOther or
+            HttpStatusCode.TemporaryRedirect or
+            HttpStatusCode.PermanentRedirect;
+
     private static bool IsTransientStatus(HttpStatusCode status) => status is
         HttpStatusCode.RequestTimeout or
         HttpStatusCode.TooManyRequests or
@@ -417,4 +437,5 @@ internal sealed record ClientOptions(
     JsonSerializerOptions JsonOptions,
     IAuthenticator? Authenticator,
     ILogger Logger,
-    Redactor Redactor);
+    Redactor Redactor,
+    int? RedirectLimit);

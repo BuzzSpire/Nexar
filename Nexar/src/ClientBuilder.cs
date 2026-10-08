@@ -12,14 +12,16 @@ public sealed class ClientBuilder
     private readonly Dictionary<string, string> _defaultHeaders = new(StringComparer.OrdinalIgnoreCase);
     private JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private RetryPolicy _retry = RetryPolicy.None;
-    private bool _acceptInvalidCerts;
     private System.Net.Http.HttpMessageHandler? _primaryHandler;
     private readonly List<DelegatingHandler> _handlers = new();
     private System.Net.Http.HttpClient? _httpClient;
     private IAuthenticator? _authenticator;
-    private System.Net.ICredentials? _credentials;
-    private bool _preAuthenticate;
-    private System.Net.DecompressionMethods? _decompression;
+    private RedirectPolicy _redirects = RedirectPolicy.Default;
+
+    // Settings for the default SocketsHttpHandler, keyed by the builder method that made them,
+    // so they can be named when they conflict with HttpMessageHandler() or HttpClient().
+    private readonly Dictionary<string, Action<SocketsHttpHandler>> _handlerSettings = new();
+    private bool _acceptInvalidCerts;
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
@@ -125,8 +127,28 @@ public sealed class ClientBuilder
     public ClientBuilder Credentials(System.Net.ICredentials credentials, bool preAuthenticate = false)
     {
         ArgumentNullException.ThrowIfNull(credentials);
-        _credentials = credentials;
-        _preAuthenticate = preAuthenticate;
+        return Configure(nameof(Credentials), h =>
+        {
+            h.Credentials = credentials;
+            h.PreAuthenticate = preAuthenticate;
+        });
+    }
+
+    /// <summary>
+    /// Sets how redirects are followed. Defaults to <see cref="RedirectPolicy.Default"/> (up to 10 hops).
+    /// When the limit is exceeded, <c>Send()</c> throws <see cref="ErrorKind.Redirect"/>.
+    /// Redirects from HTTPS to HTTP are never followed.
+    /// </summary>
+    public ClientBuilder Redirects(RedirectPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        _redirects = policy;
+        return Configure(nameof(Redirects), _ => { });
+    }
+
+    private ClientBuilder Configure(string setting, Action<SocketsHttpHandler> apply)
+    {
+        _handlerSettings[setting] = apply;
         return this;
     }
 
@@ -176,11 +198,8 @@ public sealed class ClientBuilder
     /// <summary>
     /// Sets which encodings the default handler asks for and decodes. Defaults to gzip, deflate and Brotli.
     /// </summary>
-    public ClientBuilder Decompression(System.Net.DecompressionMethods methods)
-    {
-        _decompression = methods;
-        return this;
-    }
+    public ClientBuilder Decompression(System.Net.DecompressionMethods methods) =>
+        Configure(nameof(Decompression), h => h.AutomaticDecompression = methods);
 
     /// <summary>
     /// Disables TLS certificate validation. Only use this for local development.
@@ -188,6 +207,11 @@ public sealed class ClientBuilder
     public ClientBuilder DangerAcceptInvalidCerts(bool accept = true)
     {
         _acceptInvalidCerts = accept;
+        if (accept)
+        {
+            return Configure(nameof(DangerAcceptInvalidCerts), _ => { });
+        }
+        _handlerSettings.Remove(nameof(DangerAcceptInvalidCerts));
         return this;
     }
 
@@ -245,20 +269,20 @@ public sealed class ClientBuilder
             }
         }
 
-        var configuresDefaultHandler = _acceptInvalidCerts || _credentials != null || _decompression != null;
+        var handlerSettings = string.Join(", ", _handlerSettings.Keys.Select(k => $"{k}()"));
 
-        if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || configuresDefaultHandler))
+        if (_httpClient != null && (_primaryHandler != null || _handlers.Count > 0 || _handlerSettings.Count > 0))
         {
             throw new NexarException(
                 ErrorKind.Builder,
-                "HttpClient() cannot be combined with HttpMessageHandler(), AddHandler(), DangerAcceptInvalidCerts(), Credentials() or Decompression().");
+                $"HttpClient() cannot be combined with HttpMessageHandler(), AddHandler() or handler settings ({handlerSettings}); configure that HttpClient directly.");
         }
 
-        if (_primaryHandler != null && configuresDefaultHandler)
+        if (_primaryHandler != null && _handlerSettings.Count > 0)
         {
             throw new NexarException(
                 ErrorKind.Builder,
-                "HttpMessageHandler() cannot be combined with DangerAcceptInvalidCerts(), Credentials() or Decompression(); configure your handler directly.");
+                $"HttpMessageHandler() cannot be combined with handler settings ({handlerSettings}); configure your handler directly.");
         }
 
         var jsonOptions = new JsonSerializerOptions(_jsonOptions);
@@ -281,7 +305,9 @@ public sealed class ClientBuilder
             jsonOptions,
             _authenticator,
             _logger,
-            new Redactor(_redactHeaders, _redactQueryParameters));
+            new Redactor(_redactHeaders, _redactQueryParameters),
+            // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
+            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()
@@ -301,16 +327,17 @@ public sealed class ClientBuilder
     {
         var handler = new SocketsHttpHandler
         {
-            AutomaticDecompression = _decompression ?? System.Net.DecompressionMethods.All
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+            AllowAutoRedirect = _redirects.MaxRedirects > 0,
+            MaxAutomaticRedirections = Math.Max(_redirects.MaxRedirects, 1)
         };
+        foreach (var apply in _handlerSettings.Values)
+        {
+            apply(handler);
+        }
         if (_acceptInvalidCerts)
         {
             handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
-        if (_credentials != null)
-        {
-            handler.Credentials = _credentials;
-            handler.PreAuthenticate = _preAuthenticate;
         }
         return handler;
     }
