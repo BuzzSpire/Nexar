@@ -66,6 +66,12 @@ public sealed class NexarResponse : IDisposable
     /// <summary>The parsed <c>Content-Range</c> of a partial response, or null.</summary>
     public ContentRangeHeaderValue? ContentRange => _response.Content.Headers.ContentRange;
 
+    /// <summary>
+    /// Trailing headers sent after the body (HTTP/1.1 chunked or HTTP/2), e.g. checksums or gRPC status.
+    /// Complete only after the body has been fully read.
+    /// </summary>
+    public HttpResponseHeaders Trailers => _response.TrailingHeaders;
+
     /// <summary>The parsed <c>Content-Type</c>, or null.</summary>
     public MediaTypeHeaderValue? ContentType => _response.Content.Headers.ContentType;
 

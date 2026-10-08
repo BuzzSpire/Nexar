@@ -85,7 +85,7 @@ var response = await client.Post("/orders")
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
 | Path | `Path(name, value)` fills `{name}` in the URL, escaped as a path segment: `client.Get("/users/{id}").Path("id", id)` |
 | Query | `Query(key, value)`, `Query(object)` (anonymous object or dictionary; arrays become `ids=1&ids=2`) |
-| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| Stream, contentType)`, `Body(string, Encoding, mediaType)` |
+| Body | `Json(value)`, `Form(object)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream, contentType)`, `Body(string, Encoding, mediaType)`, `Body(() => httpContent)` (fresh content per attempt), `Body(httpContent)` (sent once) |
 | Other | `Timeout(TimeSpan)`, `Retryable(bool)`, `Version(version, policy?)`, `ExpectContinue(bool)` |
 
 ### Bodies
@@ -194,6 +194,7 @@ Console.WriteLine(res.StatusCode);
 Console.WriteLine(res.ETag);                 // typed headers: ContentType, ETag, LastModified,
 Console.WriteLine(res.Location);             // Location (absolute), RetryAfter
 Console.WriteLine(res.Header("X-RateLimit-Remaining"));   // any header, or null
+Console.WriteLine(res.Trailers);             // trailing headers, after the body is read
 
 string text  = await res.Text();              // charset from Content-Type, else BOM, else UTF-8
 string old   = await res.Text(Encoding.Latin1); // fallback for bodies without a charset

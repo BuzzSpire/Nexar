@@ -378,6 +378,47 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Sends a binary body from memory, e.g. a pooled buffer. The memory must stay unchanged until the request completes.
+    /// </summary>
+    public RequestBuilder Body(ReadOnlyMemory<byte> data, string contentType = "application/octet-stream")
+    {
+        Capture(() =>
+        {
+            MediaTypeHeaderValue.Parse(contentType);
+            SetContent(() =>
+            {
+                var content = new ReadOnlyMemoryContent(data);
+                content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+                return content;
+            }, isReplayable: true);
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Sends a body created by <paramref name="contentFactory"/>, called once per attempt so every retry gets fresh content.
+    /// </summary>
+    /// <param name="contentFactory">Creates the body, e.g. from another library's serializer.</param>
+    /// <param name="replayable">False if the factory cannot be called twice; the request is then never retried.</param>
+    public RequestBuilder Body(Func<HttpContent> contentFactory, bool replayable = true)
+    {
+        ArgumentNullException.ThrowIfNull(contentFactory);
+        SetContent(contentFactory, replayable);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends a ready-made <see cref="HttpContent"/>. It is disposed after sending, so the request is never retried;
+    /// use <see cref="Body(Func{HttpContent}, bool)"/> for retryable custom content.
+    /// </summary>
+    public RequestBuilder Body(HttpContent content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        SetContent(() => content, isReplayable: false);
+        return this;
+    }
+
+    /// <summary>
     /// Sends the file at <paramref name="path"/> as the body. The content type comes from the file extension
     /// unless given. The file is reopened for every attempt, so the request can be retried.
     /// </summary>
