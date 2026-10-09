@@ -87,6 +87,10 @@ Console.WriteLine(user.Name);   // Ada Lovelace
 
 `Send()` returns `Task<NexarResponse>`, and the readers can be chained onto it: `Send().ErrorForStatus().Json<T>()`. When a chain ends in a reader, the response is disposed for you.
 
+![Nexar package structure: the core types, the extension points and the two companion packages](docs/architecture.png)
+
+The diagram's source is [`docs/architecture.excalidraw`](docs/architecture.excalidraw); open it at [excalidraw.com](https://excalidraw.com) to edit it.
+
 ## The client
 
 ```csharp
