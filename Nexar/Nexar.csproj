@@ -10,7 +10,7 @@
     <Title>Nexar - Modern HTTP Client for .NET</Title>
     <Description>A small, fluent HTTP client for .NET inspired by Rust's reqwest. Build a client once, describe each request through method chaining, and read responses lazily as JSON, text, bytes or streams. Includes typed errors, retries and DelegatingHandler support.</Description>
     <Copyright>MIT</Copyright>
-    <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
+    <PackageProjectUrl>https://nexar.buzzspire.net/</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>

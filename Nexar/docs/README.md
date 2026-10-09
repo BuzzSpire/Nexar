@@ -4,8 +4,9 @@
 
 [![NuGet](https://img.shields.io/nuget/v/BuzzSpire.Nexar.svg)](https://www.nuget.org/packages/BuzzSpire.Nexar)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/BuzzSpire/Nexar/blob/main/LICENSE)
+[![Website](https://img.shields.io/badge/website-nexar.buzzspire.net-0a7cff.svg)](https://nexar.buzzspire.net/)
 
-Nexar is a small, fluent HTTP client for .NET, inspired by Rust's [reqwest](https://docs.rs/reqwest). You build one client, describe each request with method chaining, and read the response the way you need it.
+Nexar is a small, fluent HTTP client for .NET, inspired by Rust's [reqwest](https://docs.rs/reqwest). You build one client, describe each request with method chaining, and read the response the way you need it. Documentation and guides live at [nexar.buzzspire.net](https://nexar.buzzspire.net/).
 
 ```csharp
 var user = await client.Get("/users/{id}").Path("id", 1).Send().ErrorForStatus().Json<User>();
