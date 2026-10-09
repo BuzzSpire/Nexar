@@ -25,6 +25,9 @@ internal static class Telemetry
     public static readonly UpDownCounter<long> ActiveRequests = Meter.CreateUpDownCounter<long>(
         "http.client.active_requests", unit: "{request}", description: "Number of outstanding HTTP client requests.");
 
+    public static readonly Counter<long> CircuitStateChanges = Meter.CreateCounter<long>(
+        "nexar.client.circuit_breaker.transitions", unit: "{transition}", description: "Circuit breaker state changes per host.");
+
     public static readonly Counter<long> Resends = Meter.CreateCounter<long>(
         "nexar.client.resends", unit: "{request}", description: "Number of times a request was sent again (retries and re-authentication).");
 }
@@ -50,6 +53,10 @@ internal sealed class Redactor
         _headers = new HashSet<string>(headers, StringComparer.OrdinalIgnoreCase);
         _queryParameters = new HashSet<string>(queryParameters, StringComparer.OrdinalIgnoreCase);
     }
+
+    public IEnumerable<string> Headers => _headers;
+
+    public IEnumerable<string> QueryParameters => _queryParameters;
 
     public bool IsSensitiveHeader(string name, IAuthenticator? authenticator) =>
         _headers.Contains(name) || (authenticator is IRedactionHints hints && hints.Headers.Contains(name, StringComparer.OrdinalIgnoreCase));

@@ -42,8 +42,6 @@ public sealed class OAuth2ClientCredentialsOptions
 
 internal sealed class OAuth2ClientCredentialsAuthenticator(OAuth2ClientCredentialsOptions options) : IAuthenticator
 {
-    private static readonly Lazy<NexarClient> SharedTokenClient = new(() => new NexarClient());
-
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private volatile CachedToken? _token;
 
@@ -106,91 +104,9 @@ internal sealed class OAuth2ClientCredentialsAuthenticator(OAuth2ClientCredentia
             form.AddRange(options.AdditionalParameters);
         }
 
-        var request = (options.TokenClient ?? SharedTokenClient.Value)
-            .Post(options.TokenUrl)
-            .NoAuth()
-            .Header("Accept", "application/json");
-
-        if (options.SendCredentialsInBody)
-        {
-            form.Add(new("client_id", options.ClientId));
-            form.Add(new("client_secret", options.ClientSecret));
-        }
-        else
-        {
-            // RFC 6749 §2.3.1: form-encode the credentials before Basic encoding.
-            request.BasicAuth(WebUtility.UrlEncode(options.ClientId), WebUtility.UrlEncode(options.ClientSecret));
-        }
-
-        string body;
-        HttpStatusCode status;
-        try
-        {
-            using var response = await request.Form(form).Send(cancellationToken).ConfigureAwait(false);
-            status = response.StatusCode;
-            body = await response.Text(cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccess)
-            {
-                throw new NexarException(
-                    ErrorKind.Auth,
-                    $"Token request to {options.TokenUrl} failed with HTTP {(int)status}{DescribeError(body)}.",
-                    response.Url,
-                    status);
-            }
-        }
-        catch (NexarException ex) when (ex.Kind != ErrorKind.Auth)
-        {
-            throw new NexarException(ErrorKind.Auth, $"Token request to {options.TokenUrl} failed: {ex.Message}", ex.Url, innerException: ex);
-        }
-
-        return ParseToken(body);
-    }
-
-    private CachedToken ParseToken(string body)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(body);
-            var root = document.RootElement;
-            var accessToken = root.TryGetProperty("access_token", out var tokenElement) ? tokenElement.GetString() : null;
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                throw new NexarException(ErrorKind.Auth, $"Token response from {options.TokenUrl} has no access_token.");
-            }
-
-            DateTimeOffset? expiresAt = null;
-            if (root.TryGetProperty("expires_in", out var expiresIn))
-            {
-                var seconds = expiresIn.ValueKind == JsonValueKind.String
-                    ? double.Parse(expiresIn.GetString()!, System.Globalization.CultureInfo.InvariantCulture)
-                    : expiresIn.GetDouble();
-                expiresAt = options.TimeProvider.GetUtcNow().AddSeconds(seconds);
-            }
-
-            return new CachedToken(accessToken, expiresAt);
-        }
-        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException)
-        {
-            throw new NexarException(ErrorKind.Auth, $"Token response from {options.TokenUrl} is not valid: {ex.Message}", innerException: ex);
-        }
-    }
-
-    private static string DescribeError(string body)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(body);
-            var root = document.RootElement;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var error))
-            {
-                var description = root.TryGetProperty("error_description", out var d) ? $" ({d.GetString()})" : "";
-                return $": {error.GetString()}{description}";
-            }
-        }
-        catch (JsonException)
-        {
-        }
-        return "";
+        var tokens = await OAuth2.RequestTokensAsync(options.TokenClient, options.TokenUrl, options.ClientId, options.ClientSecret,
+            options.SendCredentialsInBody, form, options.TimeProvider, cancellationToken).ConfigureAwait(false);
+        return new CachedToken(tokens.AccessToken, tokens.ExpiresAt);
     }
 
     private sealed record CachedToken(string Value, DateTimeOffset? ExpiresAt);

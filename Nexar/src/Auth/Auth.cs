@@ -158,6 +158,21 @@ public static class Auth
     }
 
     /// <summary>
+    /// OAuth 2.0 refresh token grant (RFC 6749 §6): the access token is refreshed shortly before it expires and after
+    /// a <c>401</c>, refreshes are shared by concurrent requests, and a rotated refresh token is reported through
+    /// <see cref="OAuth2RefreshTokenOptions.OnTokensRefreshed"/>. A rejected refresh token (<c>invalid_grant</c>)
+    /// raises <see cref="ErrorKind.Auth"/>; the user has to sign in again.
+    /// </summary>
+    public static IAuthenticator OAuth2RefreshToken(OAuth2RefreshTokenOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrEmpty(options.TokenUrl);
+        ArgumentException.ThrowIfNullOrEmpty(options.ClientId);
+        ArgumentException.ThrowIfNullOrEmpty(options.RefreshToken);
+        return new OAuth2RefreshTokenAuthenticator(options);
+    }
+
+    /// <summary>
     /// Any other scheme: request signing (HMAC, AWS SigV4), custom headers, ...
     /// The request body, if any, can be read inside <paramref name="apply"/>.
     /// </summary>

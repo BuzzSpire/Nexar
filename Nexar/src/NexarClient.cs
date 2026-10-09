@@ -49,6 +49,30 @@ public sealed partial class NexarClient : IDisposable
 
     internal RequestDefaults RequestDefaults => _options.RequestDefaults;
 
+    internal IReadOnlyList<KeyValuePair<string, string>> DefaultQuery => _options.DefaultQuery;
+
+    internal IReadOnlyList<IContentSerializer> Serializers => _options.Serializers;
+
+    /// <summary>
+    /// Creates a client with different request defaults (base URL, headers, query, auth, timeout, retries, JSON
+    /// options, ...) that shares this client's connection pool. Disposing it does not close the pool.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// var tenant = client.With(b => b.BaseUrl($"{baseUrl}/tenants/acme").DefaultHeader("X-Tenant", "acme"));
+    /// </code>
+    /// </example>
+    /// <exception cref="NexarException">
+    /// <paramref name="configure"/> changes handler settings (proxy, TLS, cookies, ...), which belong to this client.
+    /// </exception>
+    public NexarClient With(Action<ClientBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var builder = ClientBuilder.Derive(_options);
+        configure(builder);
+        return new NexarClient(builder.BuildOptions());
+    }
+
     internal QueryStyle QueryStyle => _options.RequestDefaults.QueryStyle;
 
     /// <summary>Starts a GET request.</summary>
@@ -144,6 +168,7 @@ public sealed partial class NexarClient : IDisposable
         try
         {
             var response = await SendThroughCacheAsync(request, attempts, cancellationToken).ConfigureAwait(false);
+            response.Serializers = _options.Serializers;
             status = response.Status;
             if (status >= 400)
             {
@@ -218,9 +243,15 @@ public sealed partial class NexarClient : IDisposable
             {
                 await AuthenticateAsync(authenticator, message, request.Url, cancellationToken).ConfigureAwait(false);
             }
+            foreach (var hook in _options.RequestHooks)
+            {
+                await RunHookAsync(() => hook(message, cancellationToken), "OnRequest", request.Url).ConfigureAwait(false);
+            }
             LogHeaders("Request", message.Headers, message.Content?.Headers, authenticator);
 
             using var lease = await AcquirePermitAsync(request, cancellationToken).ConfigureAwait(false);
+            var circuit = _options.CircuitBreaker;
+            circuit?.Enter(request.Url);
 
             // The deadline also covers reading the body, so on success it is handed over to the response.
             var deadline = new CancellationTokenSource();
@@ -240,9 +271,10 @@ public sealed partial class NexarClient : IDisposable
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 deadline.Dispose();
-                if (canRetry && request.IsIdempotent)
+                circuit?.Record(request.Url, CircuitOutcome.Failure);
+                if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: false))
                 {
-                    await ResendAfterAsync(attempts, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, request, "timeout", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 throw new NexarException(ErrorKind.Timeout, $"Request to {request.Url} timed out.", request.Url, innerException: ex);
@@ -250,11 +282,12 @@ public sealed partial class NexarClient : IDisposable
             catch (HttpRequestException ex)
             {
                 deadline.Dispose();
+                circuit?.Record(request.Url, CircuitOutcome.Failure);
                 var isConnectError = IsConnectError(ex);
                 // A request that never got a connection never reached the server, so any method is safe to retry.
-                if (canRetry && (request.IsIdempotent || isConnectError))
+                if (canRetry && ShouldRetry(request, attempt, response: null, ex, retriedByDefault: true, alwaysSafe: isConnectError))
                 {
-                    await ResendAfterAsync(attempts, isConnectError ? "connect" : "request", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
+                    await ResendAfterAsync(attempts, request, isConnectError ? "connect" : "request", Backoff(attempt++), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
                 var kind = isConnectError ? ErrorKind.Connect : ErrorKind.Request;
@@ -263,10 +296,25 @@ public sealed partial class NexarClient : IDisposable
             catch
             {
                 deadline.Dispose();
+                circuit?.Record(request.Url, CircuitOutcome.Neutral);
                 throw;
             }
 
+            circuit?.Record(request.Url, (int)response.StatusCode >= 500 ? CircuitOutcome.Failure : CircuitOutcome.Success);
             LogHeaders("Response", response.Headers, response.Content.Headers, authenticator);
+            foreach (var hook in _options.ResponseHooks)
+            {
+                try
+                {
+                    await RunHookAsync(() => hook(response, cancellationToken), "OnResponse", request.Url).ConfigureAwait(false);
+                }
+                catch
+                {
+                    response.Dispose();
+                    deadline.Dispose();
+                    throw;
+                }
+            }
 
             // The default handler returns the last 3xx when it stops following redirects.
             if (_options.RedirectLimit is { } limit && IsFollowableRedirect(response))
@@ -290,17 +338,18 @@ public sealed partial class NexarClient : IDisposable
                 reauthenticated = true;
                 response.Dispose();
                 deadline.Dispose();
-                await ResendAfterAsync(attempts, "unauthorized", TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
+                await ResendAfterAsync(attempts, request, "unauthorized", TimeSpan.Zero, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
-            if (canRetry && request.IsIdempotent && IsTransientStatus(response.StatusCode)
+            if (canRetry && (int)response.StatusCode >= 300
+                && ShouldRetry(request, attempt, response, exception: null, IsTransientStatus(response.StatusCode), alwaysSafe: false)
                 && RetryDelay(attempt, response) is { } delay)
             {
                 var reason = ((int)response.StatusCode).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 response.Dispose();
                 deadline.Dispose();
-                await ResendAfterAsync(attempts, reason, delay, cancellationToken).ConfigureAwait(false);
+                await ResendAfterAsync(attempts, request, reason, delay, cancellationToken).ConfigureAwait(false);
                 attempt++;
                 continue;
             }
@@ -316,9 +365,20 @@ public sealed partial class NexarClient : IDisposable
     /// <summary>
     /// Records a re-send (span event, metric, debug log) and waits <paramref name="delay"/>.
     /// </summary>
-    private async Task ResendAfterAsync(AttemptState attempts, string reason, TimeSpan delay, CancellationToken cancellationToken)
+    private async Task ResendAfterAsync(AttemptState attempts, PreparedRequest request, string reason, TimeSpan delay, CancellationToken cancellationToken)
     {
         attempts.Resends++;
+        foreach (var callback in _options.Retry.Callbacks)
+        {
+            try
+            {
+                callback(new RetryEvent(attempts.Resends, reason, delay, request.Method, request.Url));
+            }
+            catch (Exception ex)
+            {
+                _options.Logger.LogWarning(ex, "An OnRetry callback failed");
+            }
+        }
         attempts.Activity?.AddEvent(new ActivityEvent("nexar.resend", tags: new ActivityTagsCollection
         {
             ["nexar.resend.reason"] = reason,
@@ -379,6 +439,18 @@ public sealed partial class NexarClient : IDisposable
         };
     }
 
+    private static async ValueTask RunHookAsync(Func<ValueTask> hook, string name, Uri url)
+    {
+        try
+        {
+            await hook().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not NexarException and not OperationCanceledException)
+        {
+            throw new NexarException(ErrorKind.Request, $"An {name} hook failed for {url}: {ex.Message}", url, innerException: ex);
+        }
+    }
+
     private static HttpRequestMessage CreateMessage(PreparedRequest request)
     {
         try
@@ -421,7 +493,23 @@ public sealed partial class NexarClient : IDisposable
     {
         var retry = _options.Retry;
         var milliseconds = retry.Delay.TotalMilliseconds * (retry.ExponentialBackoff ? Math.Pow(2, attempt) : 1);
-        return TimeSpan.FromMilliseconds(Math.Min(milliseconds, retry.MaxDelay.TotalMilliseconds));
+        milliseconds = Math.Min(milliseconds, retry.MaxDelay.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(retry.Jitter ? Random.Shared.NextDouble() * milliseconds : milliseconds);
+    }
+
+    /// <summary>
+    /// Combines Nexar's default decision with <see cref="ClientBuilder.RetryWhen"/>. Non-idempotent requests are only
+    /// retried when they opted in, or when the failure is known not to have reached the server.
+    /// </summary>
+    private bool ShouldRetry(PreparedRequest request, int attempt, HttpResponseMessage? response, Exception? exception,
+        bool retriedByDefault, bool alwaysSafe)
+    {
+        var decision = retriedByDefault;
+        if (_options.Retry.Condition is { } condition)
+        {
+            decision = condition(new RetryContext(attempt + 1, request.Method, request.Url, response, exception, retriedByDefault)) ?? retriedByDefault;
+        }
+        return decision && (request.IsIdempotent || alwaysSafe);
     }
 
     /// <summary>
@@ -494,6 +582,14 @@ public sealed partial class NexarClient : IDisposable
 internal sealed record RetryPolicy(int MaxRetries, TimeSpan Delay, bool ExponentialBackoff, TimeSpan MaxDelay)
 {
     public static readonly RetryPolicy None = new(0, TimeSpan.Zero, false, TimeSpan.Zero);
+
+    /// <summary>Spread each computed backoff randomly between zero and its value ("full jitter").</summary>
+    public bool Jitter { get; init; }
+
+    /// <summary>Adds (true) or vetoes (false) retries; null keeps Nexar's decision.</summary>
+    public Func<RetryContext, bool?>? Condition { get; init; }
+
+    public IReadOnlyList<Action<RetryEvent>> Callbacks { get; init; } = [];
 }
 
 /// <summary>
@@ -514,7 +610,12 @@ internal sealed record ClientOptions(
     RequestDefaults RequestDefaults,
     System.Threading.RateLimiting.RateLimiter? RateLimiter,
     IHttpCache? Cache,
-    TimeProvider CacheClock);
+    TimeProvider CacheClock,
+    IReadOnlyList<KeyValuePair<string, string>> DefaultQuery,
+    IReadOnlyList<IContentSerializer> Serializers,
+    IReadOnlyList<Func<HttpRequestMessage, CancellationToken, ValueTask>> RequestHooks,
+    IReadOnlyList<Func<HttpResponseMessage, CancellationToken, ValueTask>> ResponseHooks,
+    CircuitBreaker? CircuitBreaker);
 
 /// <summary>
 /// Client-wide defaults that individual requests can override.

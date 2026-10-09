@@ -99,20 +99,34 @@ var client = NexarClient.Builder()
 var client = new NexarClient();   // all defaults
 ```
 
+Need slightly different defaults, such as another base path, tenant headers or other credentials? `With()` derives a client that shares the same connection pool:
+
+```csharp
+using var tenant = client.With(b => b
+    .BaseUrl("https://api.example.com/v1/tenants/acme")
+    .DefaultHeader("X-Tenant", "acme")
+    .Auth(Auth.Bearer(acmeToken)));
+```
+
+Disposing a derived client does not close the pool. Handler settings such as proxies, TLS and cookies belong to the parent.
+
 | `ClientBuilder` | What it does |
 |---|---|
 | `BaseUrl(url)` | Relative request URLs are joined to it. Absolute URLs bypass it. |
 | `Timeout(t)` | Total time for one attempt: connecting, sending, receiving headers, and reading the body with `Text`/`Bytes`/`Json`. `Stream()` and the streaming readers are not limited. Default 100 s. |
-| `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)` | Sent with every request. A request header with the same name replaces it. |
+| `DefaultHeader(name, value)`, `DefaultHeaders(...)`, `UserAgent(...)`, `DefaultQuery(name, value)` | Sent with every request (e.g. `?api-version=...`). A request header or query parameter with the same name replaces it. |
 | `JsonOptions(options)`, `JsonOptions(o => ...)` | Default: `JsonSerializerDefaults.Web` (camelCase, case-insensitive). |
+| `Serializer(serializer)` | Registers a body format such as XML or MessagePack for `Serialized()` and `As<T>()`. |
 | `QueryStyle(arrays, nested)` | How `Query(object)` and `Form(object)` encode arrays and nested objects. |
-| `Retry(maxRetries, delay, exponentialBackoff, maxDelay)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |
+| `Retry(maxRetries, delay, exponentialBackoff, maxDelay, jitter)`, `RetryWhen(ctx => ...)`, `OnRetry(e => ...)` | See [Retries and timeouts](#retries-and-timeouts). Off by default. |
 | `Auth(authenticator)`, `Credentials(ICredentials)` | See [Authentication](#authentication). |
 | `Cache(cache)` | See [Caching](#caching). |
 | `RateLimit(limiter)` | Waits for a `System.Threading.RateLimiting` permit before every attempt. A refused permit throws `ErrorKind.RateLimited`. |
+| `CircuitBreaker(failureRatio, minimumThroughput, samplingDuration, breakDuration)` | Per host: after too many failures (transport errors, 5xx), fail fast with `ErrorKind.CircuitOpen` for a while, then let one probe through. |
 | `MaxResponseSize(bytes)` | Fail with `ErrorKind.Body` instead of buffering huge bodies. No limit by default. |
 | `HttpVersion(version, policy)`, `ExpectContinue()` | Defaults for every request. |
 | `Logger(ILogger)`, `RedactHeaders(...)`, `RedactQueryParameters(...)` | See [Observability](#observability). |
+| `OnRequest((request, ct) => ...)`, `OnResponse((response, ct) => ...)` | Lightweight hooks run for every attempt (after authentication, and when headers arrive), e.g. computed headers or metrics. |
 | `AddHandler(DelegatingHandler)` | Middleware, run in the order added. |
 | `HttpMessageHandler(handler)`, `HttpClient(httpClient)` | Bring your own handler (tests) or `HttpClient` (`IHttpClientFactory`). Nexar never disposes a client you pass in. |
 | Connection settings | `Redirects`, `Proxy`, `CookieStore`, `ClientCertificate`, `ConnectTimeout`, `UnixSocket`, ... See [Connections](#connections). |
@@ -140,8 +154,8 @@ var matches = await client.Get("/users")
 | Conditional | `IfNoneMatch(etag)`, `IfMatch(etag)`, `IfModifiedSince(date)`, `IfUnmodifiedSince(date)` |
 | Range | `Range(from, to)`, `RangeSuffix(length)`, `IfRange(etag or date)` |
 | Auth | `Auth(authenticator)`, `NoAuth()`, `BearerAuth(token)`, `BasicAuth(user, password)` |
-| Body | `Json(value)`, `Form(...)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream \| HttpContent)`, `Body(() => content)`, `Body(text, Encoding, mediaType)` |
-| Behavior | `Timeout(t)`, `Retryable(bool)`, `Version(version, policy)`, `ExpectContinue()`, `Compress(ContentEncoding)`, `MaxResponseSize(bytes)`, `NoCache()`, `OnlyIfCached()` |
+| Body | `Json(value)`, `JsonStreamed(value)`, `JsonLines(asyncItems)`, `Form(...)`, `Multipart(form)`, `File(path)`, `Body(string \| byte[] \| ReadOnlyMemory<byte> \| Stream \| HttpContent)`, `Body(() => content)`, `Body(text, Encoding, mediaType)` |
+| Behavior | `Timeout(t)`, `Retryable(bool)`, `IdempotencyKey()`, `Version(version, policy)`, `ExpectContinue()`, `Compress(ContentEncoding)`, `MaxResponseSize(bytes)`, `NoCache()`, `OnlyIfCached()` |
 | Progress | `UploadProgress(progress)`, `DownloadProgress(progress)` |
 | Send | `Send(ct)`, `Build()` then `client.Execute(request)`, `TryClone()`, `DownloadTo(path, resume)`, `Paginate<T>()` |
 
@@ -184,7 +198,19 @@ var upload = await client.Post("/upload")
 - `File(path)` sends a file, with the content type taken from its extension. The file is reopened for every attempt, so the request can be retried.
 - `Body(text, contentType)` encodes the text with the charset named in `contentType`.
 - `Compress(ContentEncoding.Gzip)` compresses the body on the fly.
+- `JsonLines(asyncItems)` streams an `IAsyncEnumerable<T>` as NDJSON while it is produced, and `JsonStreamed(value)` serializes a huge object straight to the network. Neither is buffered.
 - Stream bodies are sent once and never retried.
+
+### XML and other formats
+
+Besides JSON, bodies can be written and read with any `IContentSerializer`. XML (`XmlContentSerializer`) ships in the box:
+
+```csharp
+await client.Post("/invoices").Body(invoice, XmlContentSerializer.Default).Send();
+var invoice = await client.Get("/invoices/7").Send().As<Invoice>();   // picked by Content-Type
+```
+
+Register your own format (Newtonsoft.Json, MessagePack, Protobuf, ...) with `.Serializer(mySerializer)`. `Serialized(value)` then writes with it, and `As<T>()` reads every content type it supports.
 
 ### Query and form styles
 
@@ -237,7 +263,7 @@ byte[] bytes = await response.Bytes();
 | `Headers`, `ContentHeaders`, `Header(name)`, `Trailers` | Raw headers |
 | `ContentType`, `ETag`, `LastModified`, `Location`, `RetryAfter`, `ContentRange`, `ContentLength`, `Links` | Typed headers; `Location` is absolute, `Links` comes from the RFC 8288 `Link` header |
 | `CacheStatus` | `Miss`, `Hit`, `Revalidated`, `Stale` or `None` |
-| `Text()`, `Text(fallbackEncoding)`, `Bytes()`, `Json<T>()`, `Stream()` | Read the body. Text uses the charset from `Content-Type`, else a BOM, else UTF-8. |
+| `Text()`, `Text(fallbackEncoding)`, `Bytes()`, `Json<T>()`, `As<T>()`, `As<T>(serializer)`, `Stream()` | Read the body. Text uses the charset from `Content-Type`, else a BOM, else UTF-8. `As<T>()` picks the serializer for the content type (JSON, XML or a registered one). |
 | `SaveTo(path)` | Atomic download to a file |
 | `Events()`, `JsonLines<T>()`, `JsonStream<T>()` | Streaming readers |
 | `ErrorForStatus()` | Throws for 4xx/5xx and returns the response otherwise |
@@ -293,6 +319,7 @@ catch (NexarException e) when (e.IsTimeout)
 | `Auth` | Credentials could not be obtained, for example the OAuth token endpoint failed. |
 | `Redirect` | Too many redirects, or a redirect from HTTPS to HTTP. |
 | `RateLimited` | The client-side rate limiter refused the request. `RetryAfter` says how long to wait. |
+| `CircuitOpen` | The circuit breaker for the host is open. `RetryAfter` says when a probe is allowed. |
 
 Cancelling through your own `CancellationToken` throws the usual `OperationCanceledException`, so a timeout and a cancellation never look the same.
 
@@ -313,6 +340,10 @@ var text = await client.Get("/flaky").Send().ErrorForStatus().Text();
 - **Which methods:** only idempotent ones (`GET`, `HEAD`, `OPTIONS`, `TRACE`, `PUT`, `DELETE`, `QUERY`), so a `POST` is never sent twice. The exception is a failed connection, which never reached the server. Opt a request in with `.Retryable()`, typically with an idempotency key, or out with `.Retryable(false)`.
 - **`Retry-After`:** replaces the computed delay. If it asks for more than `maxDelay` (default 30 s), you get that response back.
 - **Streams:** stream bodies are never re-sent.
+- **Jitter:** `Retry(..., jitter: true)` waits a random time up to the computed backoff, so clients recovering from the same outage do not retry in lockstep.
+- **Custom conditions:** `RetryWhen(ctx => ...)` returns `true` to retry, `false` to veto, or `null` to keep the default. `ctx` carries the attempt, the response or the exception.
+- **Idempotency keys:** `.IdempotencyKey()` sets one `Idempotency-Key` for all attempts and makes a `POST` retryable.
+- **Callbacks:** `OnRetry(e => ...)` is called before every re-send, with the reason and the delay.
 - **Timeouts:** `Timeout()` on the client or the request covers the whole attempt, body included. `ConnectTimeout()` limits connecting separately.
 
 ## Authentication
@@ -350,8 +381,30 @@ var daily = await reports.Get("/reports/daily").Send().ErrorForStatus().Text();
 | `Auth.ApiKeyHeader(name, key)`, `Auth.ApiKeyQuery(name, key)` | API keys (always redacted from logs) |
 | `Auth.Digest(user, password)` | HTTP Digest (RFC 7616): MD5, SHA-256, `-sess` |
 | `Auth.OAuth2ClientCredentials(...)` | OAuth 2.0 client credentials with caching and refresh |
+| `Auth.OAuth2RefreshToken(options)` | Keeps a user access token fresh with the refresh token grant, persisting rotated refresh tokens via `OnTokensRefreshed` |
 | `Auth.Custom((request, ct) => ...)` | Any signing scheme (HMAC, AWS SigV4, ...) |
 | `ClientBuilder.Credentials(...)` | NTLM / Negotiate (Kerberos) via the platform |
+
+For apps that sign users in (desktop, mobile, CLI), `OAuth2` covers the authorization code flow with PKCE:
+
+```csharp
+var pkce = OAuth2.CreatePkce();   // send pkce.Challenge (S256) in the browser sign-in URL
+var tokens = await OAuth2.ExchangeCodeAsync(null, tokenUrl, clientId, code, pkce.Verifier, redirectUri);
+
+var api = NexarClient.Builder()
+    .BaseUrl(apiUrl)
+    .Auth(Auth.OAuth2RefreshToken(new OAuth2RefreshTokenOptions
+    {
+        TokenUrl = tokenUrl,
+        ClientId = clientId,
+        RefreshToken = tokens.RefreshToken!,
+        InitialTokens = tokens,
+        OnTokensRefreshed = (fresh, ct) => secureStore.SaveAsync(fresh.RefreshToken, ct)   // rotated tokens
+    }))
+    .Build();
+```
+
+A rejected refresh token (`invalid_grant`) raises `ErrorKind.Auth`, which means the user has to sign in again.
 
 Set an authenticator on the client with `.Auth(...)` or on one request. A request-level `Auth()`, `NoAuth()`, `BearerAuth()` or an explicit `Authorization` header replaces the client's. After a `401`, the authenticator gets one chance to fix it (Digest challenge, token refresh). The request is then re-sent once, without using up a retry. You can write your own by implementing `IAuthenticator`.
 
@@ -414,6 +467,8 @@ var tail = await client.Get("/files/report.csv").RangeSuffix(100).Send().Text();
 
 `DownloadTo` keeps unfinished data in `{path}.partial` and asks for the rest with a `Range` request. If the server sends the whole resource instead, it starts over. Uploads work the same way: `client.Put(url).File("report.pdf")` and `new MultipartForm().File("doc", "report.pdf")`.
 
+For servers that throttle each connection, `DownloadTo(path, new DownloadOptions { Connections = 4, ChunkSize = 8 << 20 })` fetches ranges in parallel, guarded by `If-Range`. It falls back to one connection when the server does not support ranges.
+
 ## Caching
 
 <!-- snippet: caching -->
@@ -450,6 +505,7 @@ The cache follows RFC 9111 as a private cache:
 | `Proxy(url, credentials)`, `ProxyBypass(hosts...)`, `NoProxy()` | HTTP, HTTPS or SOCKS proxies. By default the system proxy and `HTTP(S)_PROXY`/`NO_PROXY` are used. |
 | `CookieStore(jar?)` | Keeps cookies from `Set-Cookie`. Without it, the client is stateless. |
 | `ClientCertificate(cert)`, `AddRootCertificate(ca)`, `MinTlsVersion(version)` | mTLS, private CAs (host names are still checked), TLS 1.2+ or 1.3 only |
+| `PinCertificate(host, "sha256/...")`, `ClientBuilder.ComputePin(cert)` | Certificate pinning: the chain must contain a key matching a pin (checked after normal validation). Pin a backup key too. |
 | `DangerAcceptInvalidCerts()` | Skips TLS validation; local development only |
 | `ConnectTimeout(t)`, `PoolIdleTimeout(t)`, `PoolConnectionLifetime(t)`, `MaxConnectionsPerHost(n)` | Fail fast and tune connection reuse, e.g. a lifetime so DNS changes are picked up |
 | `Decompression(methods)` | Default: gzip, deflate and Brotli |

@@ -385,6 +385,111 @@ public sealed class RequestBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sends <paramref name="value"/> serialized by <paramref name="serializer"/>, e.g.
+    /// <c>.Body(order, XmlContentSerializer.Default)</c>. The body is serialized once and can be retried.
+    /// </summary>
+    public RequestBuilder Body<T>(T value, IContentSerializer serializer)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        Capture(() =>
+        {
+            HttpContent content;
+            try
+            {
+                content = serializer.Serialize(value);
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                throw new ArgumentException($"{serializer.MediaType} serialization of {typeof(T).Name} failed: {ex.GetBaseException().Message}", ex);
+            }
+            using (content)
+            {
+                // Serialize once (synchronously, without blocking on a task) so every attempt sends the same bytes.
+                using var buffer = new MemoryStream();
+                using (var stream = content.ReadAsStream())
+                {
+                    stream.CopyTo(buffer);
+                }
+                var bytes = buffer.ToArray();
+                var contentType = content.Headers.ContentType?.ToString() ?? serializer.MediaType;
+                SetContent(() => CreateByteContent(bytes, contentType), isReplayable: true);
+            }
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> with the client's first registered serializer (<see cref="ClientBuilder.Serializer"/>),
+    /// or as JSON when none is registered.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder Serialized<T>(T value) =>
+        _client.Serializers.Count > 0 ? Body(value, _client.Serializers[0]) : Json(value);
+
+    /// <summary>
+    /// Streams <paramref name="items"/> as newline-delimited JSON (<c>application/x-ndjson</c>) while they are produced,
+    /// so bulk uploads never sit in memory. The sequence can be enumerated only once, so the request is never retried.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder JsonLines<T>(IAsyncEnumerable<T> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var options = _client.JsonOptions;
+        return JsonLinesCore(items, (stream, item, ct) => JsonSerializer.SerializeAsync(stream, item, options, ct));
+    }
+
+    /// <summary>
+    /// Streams <paramref name="items"/> as newline-delimited JSON with source-generated metadata. Safe for Native AOT.
+    /// </summary>
+    public RequestBuilder JsonLines<T>(IAsyncEnumerable<T> items, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        return JsonLinesCore(items, (stream, item, ct) => JsonSerializer.SerializeAsync(stream, item, typeInfo, ct));
+    }
+
+    private RequestBuilder JsonLinesCore<T>(IAsyncEnumerable<T> items, Func<Stream, T, CancellationToken, Task> serialize)
+    {
+        SetContent(() => new PushContent(async (stream, ct) =>
+        {
+            await foreach (var item in items.WithCancellation(ct).ConfigureAwait(false))
+            {
+                await serialize(stream, item, ct).ConfigureAwait(false);
+                await stream.WriteAsync("\n"u8.ToArray(), ct).ConfigureAwait(false);
+                await stream.FlushAsync(ct).ConfigureAwait(false);   // send each line as it is ready
+            }
+        }, "application/x-ndjson"), isReplayable: false);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> as JSON serialized straight to the network instead of into a buffer first,
+    /// for very large payloads. The value is serialized again for each attempt, so the request can still be retried.
+    /// </summary>
+    [RequiresUnreferencedCode(AotMessages.Json)]
+    [RequiresDynamicCode(AotMessages.Json)]
+    public RequestBuilder JsonStreamed<T>(T value)
+    {
+        var options = _client.JsonOptions;
+        SetContent(() => new PushContent((stream, ct) => JsonSerializer.SerializeAsync(stream, value, options, ct),
+            "application/json; charset=utf-8"), isReplayable: true);
+        return this;
+    }
+
+    /// <summary>
+    /// Sends <paramref name="value"/> as JSON serialized straight to the network with source-generated metadata.
+    /// </summary>
+    public RequestBuilder JsonStreamed<T>(T value, JsonTypeInfo<T> typeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(typeInfo);
+        SetContent(() => new PushContent((stream, ct) => JsonSerializer.SerializeAsync(stream, value, typeInfo, ct),
+            "application/json; charset=utf-8"), isReplayable: true);
+        return this;
+    }
+
     private void SetJsonContent(byte[] bytes) =>
         SetContent(() => CreateByteContent(bytes, "application/json; charset=utf-8"), isReplayable: true);
 
@@ -672,6 +777,99 @@ public sealed class RequestBuilder
         }
     }
 
+    /// <summary>
+    /// Downloads to <paramref name="path"/> over several connections, each fetching a range of the file, for servers
+    /// that throttle each connection. A first <c>Range: bytes=0-0</c> request learns the size and ETag; the ranges then
+    /// carry <c>If-Range</c>, so a file that changes mid-download fails instead of mixing versions. When the server
+    /// does not support ranges, the file is downloaded over one connection. Download progress is reported for the
+    /// whole file. Returns the file size.
+    /// </summary>
+    /// <exception cref="NexarException">A range fails, or the resource changed during the download (<see cref="ErrorKind.Body"/>).</exception>
+    public async Task<long> DownloadTo(string path, DownloadOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.Connections);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(options.ChunkSize);
+        if (!_isReplayable || _method != HttpMethod.Get)
+        {
+            throw new NexarException(ErrorKind.Builder, "Parallel downloads need a GET request without a stream body.");
+        }
+
+        var partial = path + ".partial";
+        try
+        {
+            var probe = ChunkRequest().Range(0, 0);
+            using var first = await probe.Send(cancellationToken).ConfigureAwait(false);
+            await first.ErrorForStatus(cancellationToken).ConfigureAwait(false);
+
+            if (!first.IsPartialContent || first.ContentRange?.Length is not { } total)
+            {
+                // No range support: the probe's response is the whole file.
+                await first.CopyToFileAsync(partial, append: false, cancellationToken).ConfigureAwait(false);
+                System.IO.File.Move(partial, path, overwrite: true);
+                return new FileInfo(path).Length;
+            }
+
+            var etag = first.ETag;
+            using (var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.Write))
+            {
+                file.SetLength(total);
+            }
+
+            long transferred = 0;
+            var ranges = new List<(long From, long To)>();
+            for (long from = 0; from < total; from += options.ChunkSize)
+            {
+                ranges.Add((from, Math.Min(from + options.ChunkSize, total) - 1));
+            }
+
+            await Parallel.ForEachAsync(ranges, new ParallelOptions { MaxDegreeOfParallelism = options.Connections, CancellationToken = cancellationToken },
+                async (range, ct) =>
+                {
+                    var chunk = ChunkRequest().Range(range.From, range.To);
+                    if (etag != null)
+                    {
+                        chunk.IfRange(etag);
+                    }
+                    using var response = await chunk.Send(ct).ConfigureAwait(false);
+                    await response.ErrorForStatus(ct).ConfigureAwait(false);
+                    if (!response.IsPartialContent || response.ContentRange?.From != range.From)
+                    {
+                        throw new NexarException(ErrorKind.Body,
+                            $"{response.Url} changed during the download, or the server ignored a range request.", response.Url);
+                    }
+
+                    await using var body = await response.Stream(ct).ConfigureAwait(false);
+                    await using var file = new FileStream(partial, FileMode.Open, FileAccess.Write, FileShare.Write, 81920, useAsync: true);
+                    file.Seek(range.From, SeekOrigin.Begin);
+                    var buffer = new byte[81920];
+                    int read;
+                    while ((read = await body.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                        var done = Interlocked.Add(ref transferred, read);
+                        _downloadProgress?.Report(new TransferProgress(done, total));
+                    }
+                }).ConfigureAwait(false);
+
+            System.IO.File.Move(partial, path, overwrite: true);
+            return total;
+        }
+        catch
+        {
+            TryDelete(partial);
+            throw;
+        }
+    }
+
+    /// <summary>A copy of this request for one range; progress is aggregated by the caller instead.</summary>
+    private RequestBuilder ChunkRequest()
+    {
+        var clone = TryClone()!;
+        clone._downloadProgress = null;
+        return clone;
+    }
+
     internal static void TryDelete(string path)
     {
         try
@@ -696,9 +894,20 @@ public sealed class RequestBuilder
     }
 
     /// <summary>
+    /// Sets an <c>Idempotency-Key</c> header (a new GUID unless <paramref name="key"/> is given) and makes the request
+    /// <see cref="Retryable"/>. The key is fixed when this is called, so every attempt carries the same one and the
+    /// server can deduplicate a POST that is retried.
+    /// </summary>
+    public RequestBuilder IdempotencyKey(string? key = null, string headerName = "Idempotency-Key")
+    {
+        Header(headerName, key ?? Guid.NewGuid().ToString());
+        return Retryable();
+    }
+
+    /// <summary>
     /// Allows (or forbids) retrying this request after a timeout or a transient status.
     /// By default only idempotent methods are retried; opt a <c>POST</c> or <c>PATCH</c> in when the server
-    /// deduplicates it, for example with an <c>Idempotency-Key</c> header.
+    /// deduplicates it, for example with an <c>Idempotency-Key</c> header (see <see cref="IdempotencyKey"/>).
     /// </summary>
     public RequestBuilder Retryable(bool retryable = true)
     {
@@ -815,7 +1024,11 @@ public sealed class RequestBuilder
         }
 
         var template = _pathParameters.Count == 0 ? _url : UrlBuilder.ExpandPath(_url, _pathParameters);
-        var url = UrlBuilder.Build(_client.BaseUrl, template, _query);
+        // Default query parameters come first; a request parameter with the same name replaces them.
+        var query = _client.DefaultQuery.Count == 0
+            ? _query
+            : _client.DefaultQuery.Where(d => !_query.Any(q => q.Key == d.Key)).Concat(_query).ToList();
+        var url = UrlBuilder.Build(_client.BaseUrl, template, query);
 
         // Request headers replace default headers of the same name, all values included.
         var headers = _client.DefaultHeaders.ToDictionary(

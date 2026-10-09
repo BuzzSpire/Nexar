@@ -30,15 +30,142 @@ public sealed class ClientBuilder
     private readonly List<string> _proxyBypass = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _clientCertificates = new();
     private readonly List<System.Security.Cryptography.X509Certificates.X509Certificate2> _rootCertificates = new();
+    private readonly Dictionary<string, HashSet<string>> _pins = new(StringComparer.OrdinalIgnoreCase);
     private ConnectTarget? _connectTarget;
     private readonly Dictionary<string, System.Net.IPAddress[]> _resolve = new(StringComparer.OrdinalIgnoreCase);
     private System.Net.IPAddress? _localAddress;
     private Microsoft.Extensions.Logging.ILogger _logger = Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
     private readonly List<string> _redactHeaders = [.. Redactor.DefaultHeaders];
     private readonly List<string> _redactQueryParameters = [.. Redactor.DefaultQueryParameters];
+    private readonly List<KeyValuePair<string, string>> _defaultQuery = new();
+    private readonly List<IContentSerializer> _serializers = new();
+    private readonly List<Func<HttpRequestMessage, CancellationToken, ValueTask>> _requestHooks = new();
+    private readonly List<Func<HttpResponseMessage, CancellationToken, ValueTask>> _responseHooks = new();
+    private CircuitBreakerSettings? _circuitBreaker;
+    private CircuitBreaker? _inheritedCircuitBreaker;
+    private ClientOptions? _parent;
 
     internal ClientBuilder()
     {
+    }
+
+    /// <summary>
+    /// A builder for <see cref="NexarClient.With"/>: starts from the parent's settings and reuses its connection pool.
+    /// </summary>
+    internal static ClientBuilder Derive(ClientOptions parent)
+    {
+        var builder = new ClientBuilder
+        {
+            _parent = parent,
+            _baseUrl = parent.BaseUrl?.AbsoluteUri,
+            _timeout = parent.Timeout,
+            _jsonOptions = new JsonSerializerOptions(parent.JsonOptions),
+            _retry = parent.Retry,
+            _authenticator = parent.Authenticator,
+            _logger = parent.Logger,
+            _requestDefaults = parent.RequestDefaults,
+            _rateLimiter = parent.RateLimiter,
+            _cache = parent.Cache,
+            _cacheClock = parent.CacheClock
+        };
+        foreach (var (name, value) in parent.DefaultHeaders)
+        {
+            builder._defaultHeaders[name] = value;
+        }
+        builder._defaultQuery.AddRange(parent.DefaultQuery);
+        builder._serializers.AddRange(parent.Serializers);
+        builder._inheritedCircuitBreaker = parent.CircuitBreaker;   // same hosts, same circuits
+        builder._requestHooks.AddRange(parent.RequestHooks);
+        builder._responseHooks.AddRange(parent.ResponseHooks);
+        builder._redactHeaders.Clear();
+        builder._redactHeaders.AddRange(parent.Redactor.Headers);
+        builder._redactQueryParameters.Clear();
+        builder._redactQueryParameters.AddRange(parent.Redactor.QueryParameters);
+        return builder;
+    }
+
+    /// <summary>
+    /// Fails fast while a host keeps failing, instead of piling up retries and timeouts. Per host, when at least
+    /// <paramref name="minimumThroughput"/> attempts in <paramref name="samplingDuration"/> include a
+    /// <paramref name="failureRatio"/> share of failures (transport errors and 5xx), the circuit opens for
+    /// <paramref name="breakDuration"/>: attempts throw <see cref="ErrorKind.CircuitOpen"/> with
+    /// <see cref="NexarException.RetryAfter"/>. Then one probe is let through; success closes the circuit,
+    /// failure opens it again. State changes are logged and counted in <c>nexar.client.circuit_breaker.transitions</c>.
+    /// </summary>
+    /// <remarks>
+    /// For richer policies, use Polly or <c>Microsoft.Extensions.Http.Resilience</c> through <c>IHttpClientFactory</c>.
+    /// </remarks>
+    public ClientBuilder CircuitBreaker(double failureRatio = 0.5, int minimumThroughput = 20, TimeSpan? samplingDuration = null,
+        TimeSpan? breakDuration = null, TimeProvider? clock = null)
+    {
+        if (failureRatio is <= 0 or > 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(failureRatio), failureRatio, "The failure ratio must be greater than 0 and at most 1.");
+        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minimumThroughput);
+        var sampling = samplingDuration ?? TimeSpan.FromSeconds(30);
+        var breakFor = breakDuration ?? TimeSpan.FromSeconds(15);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(sampling, TimeSpan.Zero, nameof(samplingDuration));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(breakFor, TimeSpan.Zero, nameof(breakDuration));
+        _circuitBreaker = new CircuitBreakerSettings(failureRatio, minimumThroughput, sampling, breakFor, clock ?? TimeProvider.System);
+        return this;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="hook"/> before every attempt is sent (retries and re-authentication included), after
+    /// authentication, e.g. to add a computed header. Hooks run in the order added; a failing hook raises
+    /// <see cref="ErrorKind.Request"/>. For more control, write a <see cref="DelegatingHandler"/> (<see cref="AddHandler"/>).
+    /// </summary>
+    public ClientBuilder OnRequest(Func<HttpRequestMessage, CancellationToken, ValueTask> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        _requestHooks.Add(hook);
+        return this;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="hook"/> when the headers of every attempt's response arrive, before retries and
+    /// <c>ErrorForStatus()</c> are considered, e.g. to record metrics. Do not read the body here.
+    /// </summary>
+    public ClientBuilder OnResponse(Func<HttpResponseMessage, CancellationToken, ValueTask> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        _responseHooks.Add(hook);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a body format. The first registered serializer is the default for <see cref="RequestBuilder.Serialized"/>,
+    /// and <c>As&lt;T&gt;()</c> picks the one that reads the response's <c>Content-Type</c>. A serializer for the same
+    /// media type replaces an earlier one.
+    /// </summary>
+    /// <example><c>.Serializer(XmlContentSerializer.Default)</c></example>
+    public ClientBuilder Serializer(IContentSerializer serializer)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        var index = _serializers.FindIndex(s => s.MediaType.Equals(serializer.MediaType, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+        {
+            _serializers[index] = serializer;
+        }
+        else
+        {
+            _serializers.Add(serializer);
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a query parameter sent with every request, e.g. <c>.DefaultQuery("api-version", "2024-05-01")</c>.
+    /// A request parameter with the same name replaces it.
+    /// </summary>
+    public ClientBuilder DefaultQuery(string name, object value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        var formatted = ValueEncoder.Format(value) ?? throw new ArgumentNullException(nameof(value));
+        _defaultQuery.RemoveAll(q => q.Key == name);
+        _defaultQuery.Add(new(name, formatted));
+        return this;
     }
 
     /// <summary>
@@ -251,7 +378,7 @@ public sealed class ClientBuilder
     {
         ArgumentNullException.ThrowIfNull(certificate);
         _rootCertificates.Add(certificate);
-        return Configure(nameof(AddRootCertificate), h => h.SslOptions.RemoteCertificateValidationCallback = ValidateWithCustomRoots);
+        return Configure(nameof(AddRootCertificate), _ => { });
     }
 
     /// <summary>
@@ -280,33 +407,99 @@ public sealed class ClientBuilder
             ?? _clientCertificates[0];
     }
 
-    private bool ValidateWithCustomRoots(
+    /// <summary>
+    /// Requires the server's certificate chain for <paramref name="host"/> to contain a public key matching one of
+    /// <paramref name="pins"/>, after normal validation succeeds. Pins are SHA-256 hashes of the SubjectPublicKeyInfo,
+    /// base64-encoded, written <c>sha256/BASE64</c> (the format used by HPKP and OkHttp). Pin a backup key too, so a
+    /// key rotation does not lock clients out.
+    /// </summary>
+    /// <exception cref="ArgumentException">A pin is not <c>sha256/</c> followed by a base64 SHA-256 hash.</exception>
+    public ClientBuilder PinCertificate(string host, params string[] pins)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        if (pins.Length == 0)
+        {
+            throw new ArgumentException("At least one pin is required.", nameof(pins));
+        }
+        foreach (var pin in pins)
+        {
+            if (!pin.StartsWith("sha256/", StringComparison.Ordinal) || !IsSha256Base64(pin["sha256/".Length..]))
+            {
+                throw new ArgumentException($"'{pin}' is not a pin of the form sha256/BASE64 (a SHA-256 hash of the public key).", nameof(pins));
+            }
+        }
+
+        if (!_pins.TryGetValue(host, out var hostPins))
+        {
+            _pins[host] = hostPins = new HashSet<string>(StringComparer.Ordinal);
+        }
+        hostPins.UnionWith(pins.Select(p => p["sha256/".Length..]));
+        return Configure(nameof(PinCertificate), _ => { });
+    }
+
+    /// <summary>The <c>sha256/BASE64</c> pin of <paramref name="certificate"/>'s public key, e.g. to configure <see cref="PinCertificate"/>.</summary>
+    public static string ComputePin(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate) =>
+        "sha256/" + Spki(certificate);
+
+    private static string Spki(System.Security.Cryptography.X509Certificates.X509Certificate2 certificate) =>
+        Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(certificate.PublicKey.ExportSubjectPublicKeyInfo()));
+
+    private static bool IsSha256Base64(string value)
+    {
+        Span<byte> buffer = stackalloc byte[48];
+        return Convert.TryFromBase64String(value, buffer, out var written) && written == 32;
+    }
+
+    /// <summary>
+    /// Validates server certificates when extra roots, pins or DangerAcceptInvalidCerts are configured.
+    /// </summary>
+    private bool ValidateServerCertificate(
         object sender, System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
         System.Security.Cryptography.X509Certificates.X509Chain? chain, System.Net.Security.SslPolicyErrors errors)
     {
-        if (errors == System.Net.Security.SslPolicyErrors.None)
+        if (certificate == null)
         {
-            return true;
+            return false;
         }
+        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
+        var elements = chain?.ChainElements.Select(e => e.Certificate).ToList() ?? [leaf];
+
+        var trusted = errors == System.Net.Security.SslPolicyErrors.None;
         // Only an untrusted chain can be fixed by extra roots; a wrong host name or a missing certificate cannot.
-        if (certificate == null || errors != System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors)
+        if (!trusted && errors == System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors && _rootCertificates.Count > 0)
+        {
+            using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
+            custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+            custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
+            custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+            custom.ChainPolicy.ExtraStore.AddRange(elements.ToArray());
+            trusted = custom.Build(leaf);
+            if (trusted)
+            {
+                elements = custom.ChainElements.Select(e => e.Certificate).ToList();
+            }
+        }
+        if (_acceptInvalidCerts)
+        {
+            trusted = true;
+        }
+        if (!trusted)
         {
             return false;
         }
 
-        using var custom = new System.Security.Cryptography.X509Certificates.X509Chain();
-        custom.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
-        custom.ChainPolicy.CustomTrustStore.AddRange(_rootCertificates.ToArray());
-        custom.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
-        if (chain != null)
+        var host = (sender as System.Net.Security.SslStream)?.TargetHostName;
+        if (host == null || !_pins.TryGetValue(host, out var pins))
         {
-            foreach (var element in chain.ChainElements)
-            {
-                custom.ChainPolicy.ExtraStore.Add(element.Certificate);
-            }
+            return true;
         }
-        using var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate);
-        return custom.Build(leaf);
+        if (elements.Prepend(leaf).Any(e => pins.Contains(Spki(e))))
+        {
+            return true;
+        }
+        Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(_logger,
+            "Certificate pinning failed for {Host}: no certificate in the chain matches the configured pins", host);
+        return false;
     }
 
     /// <summary>
@@ -630,14 +823,55 @@ public sealed class ClientBuilder
     /// <param name="delay">Delay before the first retry. Defaults to 1 second.</param>
     /// <param name="exponentialBackoff">Doubles the delay after each retry.</param>
     /// <param name="maxDelay">Upper bound for any single delay. Defaults to 30 seconds.</param>
-    public ClientBuilder Retry(int maxRetries, TimeSpan? delay = null, bool exponentialBackoff = true, TimeSpan? maxDelay = null)
+    /// <param name="jitter">
+    /// Waits a random time between zero and the computed backoff ("full jitter"), so many clients recovering from
+    /// the same outage do not retry in lockstep. A <c>Retry-After</c> delay is used as given.
+    /// </param>
+    public ClientBuilder Retry(int maxRetries, TimeSpan? delay = null, bool exponentialBackoff = true, TimeSpan? maxDelay = null, bool jitter = false)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxRetries);
         var retryDelay = delay ?? TimeSpan.FromSeconds(1);
         ArgumentOutOfRangeException.ThrowIfLessThan(retryDelay, TimeSpan.Zero, nameof(delay));
         var retryMaxDelay = maxDelay ?? TimeSpan.FromSeconds(30);
         ArgumentOutOfRangeException.ThrowIfLessThan(retryMaxDelay, TimeSpan.Zero, nameof(maxDelay));
-        _retry = new RetryPolicy(maxRetries, retryDelay, exponentialBackoff, retryMaxDelay);
+        _retry = _retry with
+        {
+            MaxRetries = maxRetries,
+            Delay = retryDelay,
+            ExponentialBackoff = exponentialBackoff,
+            MaxDelay = retryMaxDelay,
+            Jitter = jitter
+        };
+        return this;
+    }
+
+    /// <summary>
+    /// Changes which failed attempts are retried. Return <c>true</c> to retry, <c>false</c> to never retry,
+    /// or <c>null</c> to keep Nexar's decision (<see cref="RetryContext.RetriedByDefault"/>).
+    /// Applies when <see cref="Retry"/> is configured. Non-idempotent requests are still only retried when they
+    /// use <see cref="RequestBuilder.Retryable"/> or <see cref="RequestBuilder.IdempotencyKey"/>, or when the
+    /// connection failed.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// .RetryWhen(ctx => ctx.Response?.StatusCode == HttpStatusCode.Conflict ? true : null)
+    /// </code>
+    /// </example>
+    public ClientBuilder RetryWhen(Func<RetryContext, bool?> condition)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+        _retry = _retry with { Condition = condition };
+        return this;
+    }
+
+    /// <summary>
+    /// Calls <paramref name="callback"/> before every re-send (retries and the re-send after a <c>401</c>),
+    /// e.g. to log or count them. Exceptions from the callback are logged and ignored.
+    /// </summary>
+    public ClientBuilder OnRetry(Action<RetryEvent> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        _retry = _retry with { Callbacks = [.. _retry.Callbacks, callback] };
         return this;
     }
 
@@ -748,8 +982,14 @@ public sealed class ClientBuilder
             jsonOptions.MakeReadOnly();
         }
 
-        var ownsHttpClient = _httpClient == null;
-        var httpClient = _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
+        if (_parent != null && (_httpClient != null || _primaryHandler != null || _handlers.Count > 0 || _handlerSettings.Count > 0))
+        {
+            throw new NexarException(ErrorKind.Builder,
+                $"A client made with With() shares its parent's connection pool, so it cannot change handler settings ({handlerSettings}), HttpMessageHandler(), AddHandler() or HttpClient().");
+        }
+
+        var ownsHttpClient = _parent == null && _httpClient == null;
+        var httpClient = _parent?.HttpClient ?? _httpClient ?? new System.Net.Http.HttpClient(BuildHandlerChain())
         {
             // Timeouts are enforced per request so they can be told apart from cancellation.
             Timeout = System.Threading.Timeout.InfiniteTimeSpan
@@ -767,11 +1007,18 @@ public sealed class ClientBuilder
             _logger,
             new Redactor(_redactHeaders, _redactQueryParameters),
             // Only the default handler is known to follow redirects; a 3xx with Location then means the limit was hit.
-            RedirectLimit: _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
+            RedirectLimit: _parent != null
+                ? _parent.RedirectLimit
+                : _httpClient == null && _primaryHandler == null && _redirects.MaxRedirects > 0 ? _redirects.MaxRedirects : null,
             _requestDefaults,
             _rateLimiter,
             _cache,
-            _cacheClock);
+            _cacheClock,
+            _defaultQuery.ToList(),
+            _serializers.ToList(),
+            _requestHooks.ToList(),
+            _responseHooks.ToList(),
+            _circuitBreaker is { } circuit ? new CircuitBreaker(circuit, _logger) : _inheritedCircuitBreaker);
     }
 
     private System.Net.Http.HttpMessageHandler BuildHandlerChain()
@@ -801,9 +1048,9 @@ public sealed class ClientBuilder
         {
             apply(handler);
         }
-        if (_acceptInvalidCerts)
+        if (_acceptInvalidCerts || _rootCertificates.Count > 0 || _pins.Count > 0)
         {
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            handler.SslOptions.RemoteCertificateValidationCallback = ValidateServerCertificate;
         }
         return handler;
     }
