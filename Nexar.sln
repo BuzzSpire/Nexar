@@ -7,8 +7,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nexar", "Nexar\\Nexar.cspro
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Nexar.Test", "Nexar.Test\\Nexar.Test\\Nexar.Test.csproj", "{074A25DD-EDAB-4149-943A-177A967191A3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexar.samples", "samples\\Nexar.samples\\Nexar.samples.csproj", "{872C8035-F4A1-4916-926D-08A7662B0EAE}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{5D20AA90-6969-D8BD-9DCD-8634F4692FDA}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexar.AotSmoke", "samples\Nexar.AotSmoke\Nexar.AotSmoke.csproj", "{FDD27DF6-7463-44A0-B038-3C3B4051F0FA}"
@@ -16,6 +14,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexar.Testing", "Nexar.Testing\Nexar.Testing.csproj", "{FCA1D06B-CE65-429F-9B44-8A270F0BD577}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexar.Extensions.DependencyInjection", "Nexar.Extensions.DependencyInjection\Nexar.Extensions.DependencyInjection.csproj", "{F9E8ED26-DE43-48F8-871C-00B5F2F4E18C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nexar.Examples", "samples\Nexar.Examples\Nexar.Examples.csproj", "{42C2FA22-EE52-4646-A02B-707AF8D666E8}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -51,18 +51,6 @@ Global
 		{074A25DD-EDAB-4149-943A-177A967191A3}.Release|x64.Build.0 = Release|Any CPU
 		{074A25DD-EDAB-4149-943A-177A967191A3}.Release|x86.ActiveCfg = Release|Any CPU
 		{074A25DD-EDAB-4149-943A-177A967191A3}.Release|x86.Build.0 = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|x64.Build.0 = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Debug|x86.Build.0 = Debug|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|x64.ActiveCfg = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|x64.Build.0 = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|x86.ActiveCfg = Release|Any CPU
-		{872C8035-F4A1-4916-926D-08A7662B0EAE}.Release|x86.Build.0 = Release|Any CPU
 		{FDD27DF6-7463-44A0-B038-3C3B4051F0FA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{FDD27DF6-7463-44A0-B038-3C3B4051F0FA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FDD27DF6-7463-44A0-B038-3C3B4051F0FA}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -99,12 +87,25 @@ Global
 		{F9E8ED26-DE43-48F8-871C-00B5F2F4E18C}.Release|x64.Build.0 = Release|Any CPU
 		{F9E8ED26-DE43-48F8-871C-00B5F2F4E18C}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9E8ED26-DE43-48F8-871C-00B5F2F4E18C}.Release|x86.Build.0 = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|x64.Build.0 = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Debug|x86.Build.0 = Debug|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|x64.ActiveCfg = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|x64.Build.0 = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|x86.ActiveCfg = Release|Any CPU
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{FDD27DF6-7463-44A0-B038-3C3B4051F0FA} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{42C2FA22-EE52-4646-A02B-707AF8D666E8} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1D124414-74F7-4BB5-AD3C-136FD30D9B30}

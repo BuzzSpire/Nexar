@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
@@ -14,8 +14,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
-    <PackageTags>http;httpclient;rest;api;requests;async;fluent;reqwest;retry;dotnet;csharp;net9</PackageTags>
-    <PackageReleaseNotes>Release 2026.1008.0: Complete rewrite with a reqwest-style fluent API (NexarClient, ClientBuilder, RequestBuilder, NexarResponse, NexarException). Breaking change: the 2.x API has been removed. See "Migrating from 2.x" in the README.</PackageReleaseNotes>
+    <PackageTags>http;httpclient;rest;api;requests;async;fluent;reqwest;retry;dotnet;csharp;net10</PackageTags>
+    <PackageReleaseNotes>Release 2026.1008.0: complete rewrite with a reqwest-style fluent API. Not compatible with earlier versions. Changelog: https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageId>BuzzSpire.Nexar</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -34,8 +34,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
-    <PackageReference Include="System.Threading.RateLimiting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="System.Threading.RateLimiting" Version="10.0.0" />
   </ItemGroup>
 
 </Project>
