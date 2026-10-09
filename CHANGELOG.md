@@ -5,19 +5,7 @@ Versions use the `YEAR.MMDD.N` scheme: the release date as month and day, and `N
 
 ## [Unreleased]
 
-### Added
-
-- A per-host circuit breaker (`CircuitBreaker(...)`, `ErrorKind.CircuitOpen`).
-- Parallel chunked downloads (`DownloadTo(path, DownloadOptions)`).
-- Request and response hooks (`OnRequest`, `OnResponse`).
-- Streaming request bodies: `JsonLines(IAsyncEnumerable<T>)` (NDJSON) and `JsonStreamed(value)`.
-- TLS certificate pinning (`PinCertificate`, `ClientBuilder.ComputePin`).
-- OAuth 2.0 for signed-in users: `OAuth2.CreatePkce()`, `OAuth2.ExchangeCodeAsync()`, `OAuth2.RefreshAsync()` and `Auth.OAuth2RefreshToken()` with refresh token rotation.
-- Pluggable body formats (`IContentSerializer`, `ClientBuilder.Serializer`, `Body(value, serializer)`, `Serialized(value)`, `As<T>()`) with XML built in (`XmlContentSerializer`).
-- Client-level default query parameters (`DefaultQuery`), and `NexarClient.With(...)` to derive clients with other defaults that share the connection pool.
-- Retry jitter (`Retry(..., jitter: true)`), custom retry conditions (`RetryWhen`), a retry callback (`OnRetry`) and `IdempotencyKey()` for safely retried POSTs.
-
-## [2026.1008.0] - 2026-10-08
+## [2026.1009.0] - 2026-10-09
 
 A complete rewrite with a fluent API modeled after Rust's reqwest. **This release is not compatible with earlier versions**; see [Migrating from 2026.3001.1 and earlier](README.md#migrating-from-202630011-and-earlier).
 
@@ -31,6 +19,15 @@ A complete rewrite with a fluent API modeled after Rust's reqwest. **This releas
 - Connections: redirect policy, proxies (HTTP and SOCKS), cookie store, client certificates and custom root CAs, connection pool settings, HTTP/2 and HTTP/3 tuning, Unix sockets, named pipes, DNS overrides.
 - Observability: `ActivitySource` and `Meter` named `Nexar` (OpenTelemetry HTTP conventions), `ILogger` logging, secret redaction.
 - Native AOT and trimming support, with `JsonTypeInfo<T>` overloads.
+- Retry jitter (`Retry(..., jitter: true)`), custom retry conditions (`RetryWhen`), a retry callback (`OnRetry`) and `IdempotencyKey()` for safely retried POSTs.
+- Client-level default query parameters (`DefaultQuery`), and `NexarClient.With(...)` to derive clients with other defaults that share the connection pool.
+- Pluggable body formats (`IContentSerializer`, `ClientBuilder.Serializer`, `Body(value, serializer)`, `Serialized(value)`, `As<T>()`) with XML built in (`XmlContentSerializer`).
+- OAuth 2.0 for signed-in users: `OAuth2.CreatePkce()`, `OAuth2.ExchangeCodeAsync()`, `OAuth2.RefreshAsync()` and `Auth.OAuth2RefreshToken()` with refresh token rotation.
+- TLS certificate pinning (`PinCertificate`, `ClientBuilder.ComputePin`).
+- Streaming request bodies: `JsonLines(IAsyncEnumerable<T>)` (NDJSON) and `JsonStreamed(value)`.
+- Request and response hooks (`OnRequest`, `OnResponse`).
+- Parallel chunked downloads (`DownloadTo(path, DownloadOptions)`).
+- A per-host circuit breaker (`CircuitBreaker(...)`, `ErrorKind.CircuitOpen`).
 - Targets .NET 10 (LTS); .NET 9 support ended in May 2026.
 - New packages: `BuzzSpire.Nexar.Testing` (`MockHttp`) and `BuzzSpire.Nexar.Extensions.DependencyInjection` (`AddNexarClient`).
 
@@ -90,7 +87,8 @@ A complete rewrite with a fluent API modeled after Rust's reqwest. **This releas
 
 - First release: asynchronous GET, POST, PUT, DELETE and PATCH requests.
 
-[2026.1008.0]: https://github.com/BuzzSpire/Nexar/compare/2025.1214.0...main
+[Unreleased]: https://github.com/BuzzSpire/Nexar/compare/2026.1009.0...main
+[2026.1009.0]: https://github.com/BuzzSpire/Nexar/compare/2025.1214.0...2026.1009.0
 [2026.3001.1]: https://www.nuget.org/packages/BuzzSpire.Nexar/2026.3001.1
 [2026.3001.0]: https://www.nuget.org/packages/BuzzSpire.Nexar/2026.3001.0
 [2026.2901.0]: https://www.nuget.org/packages/BuzzSpire.Nexar/2026.2901.0

@@ -4,8 +4,9 @@
 
 [![NuGet](https://img.shields.io/nuget/v/BuzzSpire.Nexar.svg)](https://www.nuget.org/packages/BuzzSpire.Nexar)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/BuzzSpire/Nexar/blob/main/LICENSE)
+[![Website](https://img.shields.io/badge/website-nexar.buzzspire.net-0a7cff.svg)](https://nexar.buzzspire.net/)
 
-Nexar is a small, fluent HTTP client for .NET, inspired by Rust's [reqwest](https://docs.rs/reqwest). You build one client, describe each request with method chaining, and read the response the way you need it.
+Nexar is a small, fluent HTTP client for .NET, inspired by Rust's [reqwest](https://docs.rs/reqwest). You build one client, describe each request with method chaining, and read the response the way you need it. Documentation and guides live at [nexar.buzzspire.net](https://nexar.buzzspire.net/).
 
 ```csharp
 var user = await client.Get("/users/{id}").Path("id", 1).Send().ErrorForStatus().Json<User>();
@@ -626,9 +627,9 @@ The examples start a local demo API ([`DemoApi.cs`](https://github.com/BuzzSpire
 
 ## Migrating from 2026.3001.1 and earlier
 
-Version 2026.1008.0 replaces the whole API; see the [changelog](https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md).
+Version 2026.1009.0 replaces the whole API; see the [changelog](https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md).
 
-| 2026.3001.1 | 2026.1008.0 |
+| 2026.3001.1 | 2026.1009.0 |
 |---|---|
 | `Nexar.Get<User>(url)` | `new NexarClient().Get(url).Send().Json<User>()` |
 | `Nexar.Create(new NexarConfig { BaseUrl = ..., TimeoutMs = ... })` | `NexarClient.Builder().BaseUrl(...).Timeout(...).Build()` |

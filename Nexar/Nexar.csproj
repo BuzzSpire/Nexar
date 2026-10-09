@@ -5,17 +5,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
-    <Version>2026.1008.0</Version>
+    <Version>2026.1009.0</Version>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Title>Nexar - Modern HTTP Client for .NET</Title>
     <Description>A small, fluent HTTP client for .NET inspired by Rust's reqwest. Build a client once, describe each request through method chaining, and read responses lazily as JSON, text, bytes or streams. Includes typed errors, retries and DelegatingHandler support.</Description>
     <Copyright>MIT</Copyright>
-    <PackageProjectUrl>https://github.com/BuzzSpire/Nexar</PackageProjectUrl>
+    <PackageProjectUrl>https://nexar.buzzspire.net/</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>ozel.png</PackageIcon>
     <RepositoryUrl>https://github.com/BuzzSpire/Nexar</RepositoryUrl>
     <PackageTags>http;httpclient;rest;api;requests;async;fluent;reqwest;retry;dotnet;csharp;net10</PackageTags>
-    <PackageReleaseNotes>Release 2026.1008.0: complete rewrite with a reqwest-style fluent API. Not compatible with earlier versions. Changelog: https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <PackageReleaseNotes>Release 2026.1009.0: complete rewrite with a reqwest-style fluent API. Not compatible with earlier versions. Changelog: https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md</PackageReleaseNotes>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <PackageId>BuzzSpire.Nexar</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
