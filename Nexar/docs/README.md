@@ -626,9 +626,9 @@ The examples start a local demo API ([`DemoApi.cs`](https://github.com/BuzzSpire
 
 ## Migrating from 2026.3001.1 and earlier
 
-Version 2026.1008.0 replaces the whole API; see the [changelog](https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md).
+Version 2026.1009.0 replaces the whole API; see the [changelog](https://github.com/BuzzSpire/Nexar/blob/main/CHANGELOG.md).
 
-| 2026.3001.1 | 2026.1008.0 |
+| 2026.3001.1 | 2026.1009.0 |
 |---|---|
 | `Nexar.Get<User>(url)` | `new NexarClient().Get(url).Send().Json<User>()` |
 | `Nexar.Create(new NexarConfig { BaseUrl = ..., TimeoutMs = ... })` | `NexarClient.Builder().BaseUrl(...).Timeout(...).Build()` |

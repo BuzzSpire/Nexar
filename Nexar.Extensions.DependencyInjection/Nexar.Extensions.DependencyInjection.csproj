@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Nexar.Extensions.DependencyInjection</RootNamespace>
     <IsAotCompatible>true</IsAotCompatible>
-    <Version>2026.1008.0</Version>
+    <Version>2026.1009.0</Version>
     <PackageId>BuzzSpire.Nexar.Extensions.DependencyInjection</PackageId>
     <Title>Nexar dependency injection</Title>
     <Description>Registers Nexar clients with IServiceCollection on top of IHttpClientFactory: named and typed clients, with handler lifetimes, AddHttpMessageHandler, resilience handlers and logging intact.</Description>
